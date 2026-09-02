@@ -108,6 +108,8 @@ FINNHUB_API_KEY=          # optional, for live quotes
 
 **Never commit `.env`.** CI uses `LLM_PRIMARY=mock` and a Postgres service container.
 
+`npm run start:dev` and `npm run dashboard:dev` set API port **3001** and dashboard port **4200** in their scripts (`cross-env` + `ng serve --port`), so you do not need to set `$env:PORT` manually.
+
 ## Local development
 
 ```powershell
@@ -115,12 +117,11 @@ FINNHUB_API_KEY=          # optional, for live quotes
 npm run db:up
 npm run db:setup
 
-# Terminal 2 — API
-$env:PORT=3001; npm run start:dev
+# Terminal 2 — API (port 3001)
+npm run start:dev
 
-# Terminal 3 — dashboard
-cd dashboard
-npx ng serve --port 4200
+# Terminal 3 — dashboard (port 4200)
+npm run dashboard:dev
 ```
 
 Open http://localhost:4200
