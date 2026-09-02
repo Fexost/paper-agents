@@ -14,6 +14,7 @@ import { PaperTradingService } from '../paper/paper-trading.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketDataService } from '../market/market-data.service';
 import { LlmService } from '../llm/llm.service';
+import { ScorecardService } from '../pipeline/scorecard.service';
 
 @Controller('api')
 export class ApiController {
@@ -25,6 +26,7 @@ export class ApiController {
     private readonly market: MarketDataService,
     private readonly config: ConfigService,
     private readonly llm: LlmService,
+    private readonly scorecard: ScorecardService,
   ) {}
 
   @Get('health')
@@ -77,7 +79,7 @@ export class ApiController {
 
   @Get('agents')
   async listAgents() {
-    return this.prisma.agent.findMany({
+    const agents = await this.prisma.agent.findMany({
       include: {
         prompts: {
           where: { isActive: true },
@@ -90,6 +92,17 @@ export class ApiController {
       },
       orderBy: { darwinWeight: 'desc' },
     });
+
+    return Promise.all(
+      agents.map(async (agent) => {
+        const metrics = await this.scorecard.metricsForAgent(agent.id);
+        return {
+          ...agent,
+          hitRate: metrics.hitRate,
+          scoredRecommendations: metrics.scoredCount,
+        };
+      }),
+    );
   }
 
   @Get('runs')

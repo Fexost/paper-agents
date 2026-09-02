@@ -5,6 +5,8 @@ export interface Agent {
   layer: string;
   darwinWeight: number;
   rollingSharpe: number;
+  hitRate?: number;
+  scoredRecommendations?: number;
   prompts: Array<{ version: number; autoresearchNote: string | null; createdAt: string }>;
   scoreSnapshots: Array<{ sharpe: number; hitRate: number; snapshotDate: string }>;
 }

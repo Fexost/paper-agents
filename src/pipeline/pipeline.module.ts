@@ -18,6 +18,6 @@ import { ScorecardService } from './scorecard.service';
     AutoresearchService,
     DailyCycleJob,
   ],
-  exports: [EodCycleService, AutoresearchService],
+  exports: [EodCycleService, AutoresearchService, ScorecardService],
 })
 export class PipelineModule {}

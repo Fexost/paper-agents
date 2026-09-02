@@ -6,13 +6,14 @@ import {
   RunStatus,
   TradeAction,
 } from '../../generated/prisma/client';
-import { AgentRunnerService } from '../agents/agent-runner.service';
+import { AgentRunnerService, CioAction } from '../agents/agent-runner.service';
 import { MarketDataService } from '../market/market-data.service';
 import { PaperTradingService } from '../paper/paper-trading.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AutoresearchService } from './autoresearch.service';
 import { DarwinService } from './darwin.service';
 import { ScorecardService } from './scorecard.service';
+import { calendarDateOnly } from '../common/date.util';
 
 @Injectable()
 export class EodCycleService {
@@ -31,8 +32,7 @@ export class EodCycleService {
   async runDailyCycle(
     options: { runAutoresearch?: boolean; force?: boolean } = {},
   ) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = calendarDateOnly();
 
     const todaysRuns = await this.prisma.dailyRun.findMany({
       where: { runDate: today },
@@ -115,14 +115,29 @@ export class EodCycleService {
 
       const portfolio = await this.paper.getPortfolio(prices);
       const weightedAgents = await this.darwin.updateWeights();
+      const portfolioContext = {
+        account: portfolio.account,
+        positions: portfolio.positions.map((p) => ({
+          ticker: p.ticker,
+          shares: p.shares,
+          avgCost: p.avgCost,
+          marketValue: p.marketValue,
+        })),
+        totals: portfolio.totals,
+      };
       const cio = await this.agents.runCio(
         macro,
         sector,
-        portfolio,
+        portfolioContext,
         this.darwin.toWeightMap(weightedAgents),
         promptFor('cio'),
         Number(process.env.MAX_POSITION_PCT ?? 0.1),
       );
+
+      const heldShares = new Map(
+        portfolio.positions.map((p) => [p.ticker.toUpperCase(), p.shares]),
+      );
+      const cioActions = this.sanitizeCioActions(cio.actions, heldShares);
 
       const macroAgent = agentRecords.find((a) => a.slug === 'macro');
       const sectorAgent = agentRecords.find((a) => a.slug === 'sector');
@@ -161,14 +176,14 @@ export class EodCycleService {
       }
 
       const { executed: trades, skipped } = await this.paper.executeActions(
-        cio.actions,
+        cioActions,
         prices,
         run.id,
       );
 
       if (cioAgent) {
         for (const trade of trades) {
-          const sourceAction = cio.actions.find(
+          const sourceAction = cioActions.find(
             (a) =>
               a.ticker.toUpperCase() === trade.ticker &&
               a.action === trade.action,
@@ -200,17 +215,9 @@ export class EodCycleService {
         }
       }
 
-      const priorCompletedToday = await this.prisma.dailyRun.count({
-        where: {
-          runDate: today,
-          status: RunStatus.COMPLETED,
-        },
-      });
-      if (priorCompletedToday === 0) {
-        const tickResult = await this.autoresearch.tickAfterDailyRun();
-        if (tickResult) {
-          autoresearchResult = tickResult;
-        }
+      const tickResult = await this.autoresearch.tickAfterDailyRun();
+      if (tickResult) {
+        autoresearchResult = tickResult;
       }
 
       const completed = await this.prisma.dailyRun.update({
@@ -255,5 +262,40 @@ export class EodCycleService {
       });
       throw error;
     }
+  }
+
+  /** Drop invalid CIO orders before execution (e.g. SELL when flat). */
+  private sanitizeCioActions(
+    actions: CioAction[],
+    heldShares: Map<string, number>,
+  ): CioAction[] {
+    const sanitized: CioAction[] = [];
+
+    for (const action of actions) {
+      const ticker = action.ticker.toUpperCase();
+      const sharesHeld = heldShares.get(ticker) ?? 0;
+
+      if (action.action === 'HOLD' || action.shares <= 0) {
+        continue;
+      }
+
+      if (action.action === 'SELL' && sharesHeld <= 0) {
+        this.logger.debug(
+          `Dropped CIO SELL ${ticker}: not in portfolio (LLM hallucination)`,
+        );
+        continue;
+      }
+
+      sanitized.push({
+        ...action,
+        ticker,
+        shares:
+          action.action === 'SELL'
+            ? Math.min(action.shares, sharesHeld)
+            : action.shares,
+      });
+    }
+
+    return sanitized;
   }
 }

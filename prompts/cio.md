@@ -29,8 +29,9 @@ Respond with JSON only:
 ```
 
 Rules:
-- **Review every open position** in the portfolio. For each held ticker, output BUY, SELL, or HOLD with share count.
-- **SELL** when: sector/macro turned bearish on the name, position exceeds max % of equity, risk-off regime, or taking profits after a run-up.
+- **Review every open position** in `portfolio.positions` only. For each held ticker, output BUY, SELL, or HOLD with share count.
+- **Never SELL a ticker you do not hold** — check `portfolio.positions`; if shares is 0 or ticker is missing, do not output SELL for it.
+- **SELL** when: sector/macro turned bearish on a **held** name, position exceeds max % of equity, risk-off regime, or taking profits after a run-up.
 - **BUY** only when conviction is high and room under the position limit; shares are trimmed automatically if too large.
 - **HOLD** with `shares: 0` — still list the ticker so the run documents your decision.
 - Do not BUY tickers already at or above the max position % — SELL or trim instead.

@@ -220,6 +220,13 @@ export class AutoresearchService {
         },
       });
 
+      await this.scorecard.refreshAgentMetrics();
+
+      await this.prisma.agent.update({
+        where: { id: experiment.agentId },
+        data: { rollingSharpe: candidateSharpe },
+      });
+
       this.logger.log(
         `Autoresearch KEPT for ${experiment.agent.slug}: ${experiment.baselineSharpe.toFixed(3)} -> ${candidateSharpe.toFixed(3)}`,
       );
@@ -293,11 +300,7 @@ export class AutoresearchService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const returns = recs.map((rec) => {
-      const conviction = rec.conviction / 100;
-      const directionMultiplier = rec.direction === 'SHORT' ? -1 : 1;
-      return (rec.forwardReturn1d ?? 0) * conviction * directionMultiplier;
-    });
+    const returns = recs.map((rec) => this.scorecard.weightedReturn(rec));
 
     return this.scorecard.calculateSharpe(returns);
   }

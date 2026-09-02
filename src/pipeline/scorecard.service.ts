@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Direction } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { calendarDateOnly } from '../common/date.util';
 
 /** Daily move below this counts as "neutral" for macro NEUTRAL regime calls. */
 const NEUTRAL_BAND = 0.004;
@@ -78,55 +79,65 @@ export class ScorecardService {
     const agents = await this.prisma.agent.findMany();
 
     for (const agent of agents) {
-      const recs = await this.prisma.recommendation.findMany({
-        where: {
-          agentId: agent.id,
-          scoredAt: { not: null },
-          forwardReturn1d: { not: null },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 60,
-      });
-
-      const returns = recs.map((rec) => {
-        const conviction = rec.conviction / 100;
-        const raw = rec.forwardReturn1d ?? 0;
-        if (rec.direction === Direction.NEUTRAL) {
-          return (rec.isHit ? 0.002 : -Math.abs(raw)) * conviction;
-        }
-        const directionMultiplier = rec.direction === Direction.SHORT ? -1 : 1;
-        return raw * conviction * directionMultiplier;
-      });
-
-      const sharpe = this.calculateSharpe(returns);
-      const hitRate =
-        recs.length === 0
-          ? 0
-          : recs.filter((rec) => rec.isHit).length / recs.length;
+      const metrics = await this.metricsForAgent(agent.id);
 
       await this.prisma.agent.update({
         where: { id: agent.id },
-        data: { rollingSharpe: sharpe },
+        data: { rollingSharpe: metrics.sharpe },
       });
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
 
       await this.prisma.scoreSnapshot.upsert({
         where: {
           agentId_snapshotDate: {
             agentId: agent.id,
-            snapshotDate: today,
+            snapshotDate: calendarDateOnly(),
           },
         },
-        update: { sharpe, hitRate },
+        update: { sharpe: metrics.sharpe, hitRate: metrics.hitRate },
         create: {
           agentId: agent.id,
-          snapshotDate: today,
-          sharpe,
-          hitRate,
+          snapshotDate: calendarDateOnly(),
+          sharpe: metrics.sharpe,
+          hitRate: metrics.hitRate,
         },
       });
     }
+  }
+
+  async metricsForAgent(agentId: string) {
+    const recs = await this.prisma.recommendation.findMany({
+      where: {
+        agentId,
+        scoredAt: { not: null },
+        forwardReturn1d: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 60,
+    });
+
+    const returns = recs.map((rec) => this.weightedReturn(rec));
+
+    const sharpe = this.calculateSharpe(returns);
+    const hitRate =
+      recs.length === 0
+        ? 0
+        : recs.filter((rec) => rec.isHit).length / recs.length;
+
+    return { sharpe, hitRate, scoredCount: recs.length };
+  }
+
+  weightedReturn(rec: {
+    conviction: number;
+    forwardReturn1d: number | null;
+    direction: Direction;
+    isHit: boolean | null;
+  }): number {
+    const conviction = rec.conviction / 100;
+    const raw = rec.forwardReturn1d ?? 0;
+    if (rec.direction === Direction.NEUTRAL) {
+      return (rec.isHit ? 0.002 : -Math.abs(raw)) * conviction;
+    }
+    const directionMultiplier = rec.direction === Direction.SHORT ? -1 : 1;
+    return raw * conviction * directionMultiplier;
   }
 }
