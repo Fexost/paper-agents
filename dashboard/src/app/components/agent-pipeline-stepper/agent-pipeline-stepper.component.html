@@ -1,0 +1,38 @@
+@if (progress()?.active) {
+  <div class="stepper">
+    @for (step of steps; track step.key; let i = $index) {
+      <div class="step">
+        <span
+          class="label"
+          [class.active]="stepStatus(step.key) === 'active'"
+          [class.done]="stepStatus(step.key) === 'done'"
+          [class.error]="stepStatus(step.key) === 'error'"
+        >{{ step.label }}</span>
+        <div class="dot-row">
+          @if (i > 0) {
+            <span
+              class="connector connector-left"
+              [class.done]="isDone(steps[i - 1].key)"
+            ></span>
+          }
+          <span
+            class="dot"
+            [class.pending]="stepStatus(step.key) === 'pending'"
+            [class.active]="stepStatus(step.key) === 'active'"
+            [class.done]="stepStatus(step.key) === 'done'"
+            [class.error]="stepStatus(step.key) === 'error'"
+          ></span>
+          @if (i < steps.length - 1) {
+            <span
+              class="connector connector-right"
+              [class.done]="isDone(step.key)"
+            ></span>
+          }
+        </div>
+      </div>
+    }
+    @if (elapsed) {
+      <span class="elapsed">{{ elapsed }}</span>
+    }
+  </div>
+}

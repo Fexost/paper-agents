@@ -1,0 +1,10 @@
+<div class="scroll-box" #scrollHost (scroll)="onScroll()">
+  <ng-content></ng-content>
+  <div class="sentinel" #sentinel></div>
+  @if (loadingMore()) {
+    <p class="loading-more muted">Loading more…</p>
+  }
+  @if (!hasMore() && !loadingMore()) {
+    <p class="end muted">End of list</p>
+  }
+</div>

@@ -441,34 +441,36 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   margin: 1rem 0;
 }
 
 .top-grid > .panel {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .agents-panel,
 .portfolio-panel {
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
-.agents-panel .panel-body {
+.panel-body-min-rows {
   flex: 1 1 auto;
-  min-height: 0;
+  /* thead + 3 data rows — keeps all agents visible when portfolio is empty */
+  min-height: calc(var(--table-row-height) * 4);
+}
+
+.agents-panel .panel-body-min-rows {
   overflow-y: auto;
 }
 
-.portfolio-panel .panel-body {
-  flex: 0 0 auto;
-}
-
-.history-panel .empty-row {
-  text-align: center;
-  padding: 1.5rem 0.35rem !important;
+.portfolio-panel .panel-body-min-rows {
+  display: flex;
+  flex-direction: column;
 }
 
 .panel {

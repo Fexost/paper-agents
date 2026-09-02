@@ -11,6 +11,7 @@
   --good: #5dd39e;
   --bad: #ff6b8a;
   --warn: #f0c674;
+  --table-row-height: 2.25rem;
 }
 
 * {

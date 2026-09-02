@@ -1,5 +1,14 @@
-import { CommonModule, CurrencyPipe, DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
-import { Component, ElementRef, AfterViewInit, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { CurrencyPipe, DatePipe, DecimalPipe, PercentPipe, SlicePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  inject,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  ElementRef,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   Subject,
@@ -30,22 +39,21 @@ import {
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    CommonModule,
     FormsModule,
     CurrencyPipe,
     DatePipe,
     DecimalPipe,
     PercentPipe,
+    SlicePipe,
     ScrollLoadBoxComponent,
     AgentPipelineStepperComponent,
   ],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
+export class DashboardComponent implements OnInit, OnDestroy {
   @ViewChild('runDetail') runDetailRef?: ElementRef<HTMLElement>;
-  @ViewChild('portfolioPanel') portfolioPanelRef?: ElementRef<HTMLElement>;
-  @ViewChild('agentsPanel') agentsPanelRef?: ElementRef<HTMLElement>;
 
   agents: Agent[] = [];
   portfolio: Portfolio | null = null;
@@ -88,42 +96,30 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly pollOnlineMs = 15_000;
   private readonly pollOfflineMs = 30_000;
   private refreshInFlight = false;
-  private panelHeightObserver?: ResizeObserver;
 
-  constructor(private readonly api: ApiService) {}
+  private readonly api = inject(ApiService);
+  private readonly cdr = inject(ChangeDetectorRef);
 
-  ngOnInit() {
-    this.refresh();
+  ngOnInit(): void {
+    this.loadInitialData();
   }
 
-  ngAfterViewInit() {
-    this.setupPanelHeightSync();
-  }
-
-  ngOnDestroy() {
+  ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
     this.pollSub?.unsubscribe();
     this.refreshSub?.unsubscribe();
     this.actionSub?.unsubscribe();
     this.progressSub?.unsubscribe();
-    this.panelHeightObserver?.disconnect();
     if (this.successTimer) clearTimeout(this.successTimer);
   }
 
-  private setupPanelHeightSync() {
-    const portfolioEl = this.portfolioPanelRef?.nativeElement;
-    const agentsEl = this.agentsPanelRef?.nativeElement;
-    if (!portfolioEl || !agentsEl) return;
+  private loadInitialData(): void {
+    this.refresh();
+  }
 
-    const sync = () => {
-      agentsEl.style.height = `${portfolioEl.offsetHeight}px`;
-    };
-
-    sync();
-    this.panelHeightObserver?.disconnect();
-    this.panelHeightObserver = new ResizeObserver(sync);
-    this.panelHeightObserver.observe(portfolioEl);
+  private markViewDirty(): void {
+    this.cdr.markForCheck();
   }
 
   private emptyPage<T>(): HistoryPage<T> {
@@ -174,10 +170,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           }
           this.setOffline();
           this.loading = false;
+          this.markViewDirty();
         },
         error: () => {
           this.setOffline();
           this.loading = false;
+          this.markViewDirty();
         },
       });
   }
@@ -191,7 +189,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.error = '';
   }
 
-  refresh(showLoading = true) {
+  protected refresh(showLoading = true): void {
     if (this.refreshInFlight) {
       return;
     }
@@ -232,6 +230,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             this.loading = false;
             this.lastRefresh = new Date();
             this.schedulePoll();
+            this.markViewDirty();
             return;
           }
 
@@ -270,13 +269,14 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.loading = false;
           this.lastRefresh = new Date();
           this.schedulePoll();
-          setTimeout(() => this.setupPanelHeightSync());
+          this.markViewDirty();
         },
         error: () => {
           this.refreshInFlight = false;
           this.setOffline();
           this.loading = false;
           this.schedulePoll();
+          this.markViewDirty();
         },
       });
   }
@@ -303,7 +303,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  loadMoreRuns() {
+  protected loadMoreRuns(): void {
     if (!this.runsPage.hasMore || this.runsPage.loadingMore) return;
     this.runsPage.loadingMore = true;
     this.api.getRuns(5, this.runsPage.cursor).subscribe({
@@ -312,14 +312,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.runsPage.cursor = res.nextCursor;
         this.runsPage.hasMore = res.hasMore;
         this.runsPage.loadingMore = false;
+        this.markViewDirty();
       },
       error: () => {
         this.runsPage.loadingMore = false;
+        this.markViewDirty();
       },
     });
   }
 
-  loadMoreTrades() {
+  protected loadMoreTrades(): void {
     if (!this.tradesPage.hasMore || this.tradesPage.loadingMore) return;
     this.tradesPage.loadingMore = true;
     this.api.getTrades(5, this.tradesPage.cursor).subscribe({
@@ -328,14 +330,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.tradesPage.cursor = res.nextCursor;
         this.tradesPage.hasMore = res.hasMore;
         this.tradesPage.loadingMore = false;
+        this.markViewDirty();
       },
       error: () => {
         this.tradesPage.loadingMore = false;
+        this.markViewDirty();
       },
     });
   }
 
-  loadMoreExperiments() {
+  protected loadMoreExperiments(): void {
     if (!this.experimentsPage.hasMore || this.experimentsPage.loadingMore) return;
     this.experimentsPage.loadingMore = true;
     this.api.getExperiments(5, this.experimentsPage.cursor).subscribe({
@@ -347,14 +351,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.experimentsPage.cursor = res.nextCursor;
         this.experimentsPage.hasMore = res.hasMore;
         this.experimentsPage.loadingMore = false;
+        this.markViewDirty();
       },
       error: () => {
         this.experimentsPage.loadingMore = false;
+        this.markViewDirty();
       },
     });
   }
 
-  confirmResetPortfolio() {
+  protected confirmResetPortfolio(): void {
     const ok = confirm(
       'Reset paper portfolio to starting cash?\n\n' +
         'Clears: positions and trade history.\n' +
@@ -364,7 +370,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.resetPortfolio();
   }
 
-  resetPortfolio() {
+  private resetPortfolio(): void {
     this.resettingPortfolio = true;
     this.error = '';
     this.clearSuccess();
@@ -382,16 +388,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             res.message ?? 'Paper portfolio reset — learning data kept',
           );
           this.refresh(false);
+          this.markViewDirty();
         },
         error: (e) => {
           this.resettingPortfolio = false;
           this.error =
             e.error?.message ?? e.message ?? 'Failed to reset portfolio';
+          this.markViewDirty();
         },
       });
   }
 
-  runCycle() {
+  protected runCycle(): void {
     this.running = true;
     this.pipelineProgress = null;
     this.error = '';
@@ -416,11 +424,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             this.showSuccess('Paper cycle completed');
           }
           this.refresh(false);
+          this.markViewDirty();
         },
         error: (e) => {
           this.running = false;
           this.stopProgressPolling();
           this.error = e.error?.message ?? e.message ?? 'Pipeline failed';
+          this.markViewDirty();
         },
       });
   }
@@ -437,6 +447,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       .subscribe((progress) => {
         if (progress) {
           this.pipelineProgress = progress;
+          this.markViewDirty();
         }
       });
   }
@@ -447,7 +458,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.pipelineProgress = null;
   }
 
-  startAutoresearch() {
+  protected startAutoresearch(): void {
     this.startingAutoresearch = true;
     this.error = '';
     this.clearSuccess();
@@ -466,18 +477,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             this.showSuccess(result.message ?? 'Autoresearch experiment started');
           }
           this.refresh(false);
+          this.markViewDirty();
         },
         error: (e) => {
           this.startingAutoresearch = false;
           this.error = e.error?.message ?? e.message ?? 'Autoresearch failed';
+          this.markViewDirty();
         },
       });
   }
 
-  selectRun(run: DailyRun) {
+  protected selectRun(run: DailyRun): void {
     this.api.getRun(run.id).subscribe({
       next: (detail) => {
         this.selectedRun = detail;
+        this.markViewDirty();
         setTimeout(() => {
           this.runDetailRef?.nativeElement.scrollIntoView({
             behavior: 'smooth',
@@ -487,11 +501,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       },
       error: () => {
         this.selectedRun = run;
+        this.markViewDirty();
       },
     });
   }
 
-  toggleRunSummary(runId: string, event: Event) {
+  protected toggleRunSummary(runId: string, event: Event): void {
     event.stopPropagation();
     if (this.expandedRuns.has(runId)) {
       this.expandedRuns.delete(runId);
@@ -500,11 +515,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  isRunExpanded(runId: string): boolean {
+  protected isRunExpanded(runId: string): boolean {
     return this.expandedRuns.has(runId);
   }
 
-  toggleExperimentChange(experimentId: string, event: Event) {
+  protected toggleExperimentChange(experimentId: string, event: Event): void {
     event.stopPropagation();
     if (this.expandedExperiments.has(experimentId)) {
       this.expandedExperiments.delete(experimentId);
@@ -513,23 +528,23 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  isExperimentChangeExpanded(experimentId: string): boolean {
+  protected isExperimentChangeExpanded(experimentId: string): boolean {
     return this.expandedExperiments.has(experimentId);
   }
 
-  experimentProgress(exp: AutoresearchExperiment): number {
+  protected experimentProgress(exp: AutoresearchExperiment): number {
     if (!exp.evaluationDays) return 0;
     return Math.min(100, (exp.daysCompleted / exp.evaluationDays) * 100);
   }
 
-  candidateSharpe(exp: AutoresearchExperiment): number | null {
+  protected candidateSharpe(exp: AutoresearchExperiment): number | null {
     if (exp.status === 'EVALUATING' && exp.runningCandidateSharpe != null) {
       return exp.runningCandidateSharpe;
     }
     return exp.candidateSharpe;
   }
 
-  sharpeDelta(exp: AutoresearchExperiment): number | null {
+  protected sharpeDelta(exp: AutoresearchExperiment): number | null {
     if (exp.status === 'EVALUATING' && exp.runningDelta != null) {
       return exp.runningDelta;
     }
@@ -537,50 +552,43 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     return exp.candidateSharpe - exp.baselineSharpe;
   }
 
-  tradePnl(trade: PaperTrade): number | null {
+  protected tradePnl(trade: PaperTrade): number | null {
     if (trade.action !== 'SELL' || trade.realizedPnl == null) {
       return null;
     }
     return trade.realizedPnl;
   }
 
-  statusClass(status: string): string {
-    return status.toLowerCase();
+  protected badgeStatusClasses(status: string): Record<string, boolean> {
+    return { [status.toLowerCase()]: true };
   }
 
-  readyLlmCount(): number {
+  protected readyLlmCount(): number {
     return this.status?.llmProviders.filter((p) => p.ready && p.name !== 'mock').length ?? 0;
   }
 
-  marketStatusLabel(): string {
+  protected marketStatusLabel(): string {
     if (!this.status?.market) return 'unknown';
     if (this.status.market.usingLiveData) return 'live';
     if (this.status.market.finnhubConfigured) return 'mock';
     return 'mock';
   }
 
-  marketStatusClass(): string {
-    if (!this.status?.market) return '';
-    if (this.status.market.usingLiveData) return 'live';
-    if (this.status.market.finnhubConfigured) return 'warn';
-    return '';
-  }
-
-  latestSnapshot(agent: Agent) {
+  protected latestSnapshot(agent: Agent) {
     return agent.scoreSnapshots[0] ?? null;
   }
 
-  sharpeTrend(agent: Agent): string {
+  protected sharpeTrend(agent: Agent): string {
     const snaps = agent.scoreSnapshots;
     if (snaps.length < 2) return 'flat';
     return snaps[0].sharpe > snaps[1].sharpe ? 'up' : snaps[0].sharpe < snaps[1].sharpe ? 'down' : 'flat';
   }
 
-  onAgentChange() {
+  protected onAgentChange(): void {
     this.refresh(false);
   }
 
-  savePrompt() {
+  protected savePrompt(): void {
     this.savingPrompt = true;
     this.actionSub?.unsubscribe();
 
@@ -593,43 +601,45 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.savingPrompt = false;
           this.showSuccess(`Prompt saved (v${res.prompt.version})`);
           this.refresh(false);
+          this.markViewDirty();
         },
         error: (e) => {
           this.savingPrompt = false;
           this.error = e.error?.message ?? e.message ?? 'Failed to save prompt';
+          this.markViewDirty();
         },
       });
   }
 
-  pnl(): number {
+  protected pnl(): number {
     if (!this.portfolio) return 0;
     return this.portfolio.totals.equity - this.portfolio.account.startingCash;
   }
 
-  pnlPct(): number {
+  protected pnlPct(): number {
     if (!this.portfolio?.account.startingCash) return 0;
     return this.pnl() / this.portfolio.account.startingCash;
   }
 
-  keptCount(): number {
+  protected keptCount(): number {
     return this.experimentsPage.items.filter((e) => e.status === 'KEPT').length;
   }
 
-  revertedCount(): number {
+  protected revertedCount(): number {
     return this.experimentsPage.items.filter((e) => e.status === 'REVERTED').length;
   }
 
-  detailRun(): DailyRun | null {
+  protected detailRun(): DailyRun | null {
     return this.selectedRun ?? this.latestRun;
   }
 
-  private showSuccess(message: string) {
+  private showSuccess(message: string): void {
     this.success = message;
     if (this.successTimer) clearTimeout(this.successTimer);
     this.successTimer = setTimeout(() => (this.success = ''), 5000);
   }
 
-  private clearSuccess() {
+  private clearSuccess(): void {
     this.success = '';
     if (this.successTimer) clearTimeout(this.successTimer);
   }
