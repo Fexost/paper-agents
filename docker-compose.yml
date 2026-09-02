@@ -1,0 +1,17 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: paper-agents-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: paper_agents
+    ports:
+      - '5433:5432'
+    volumes:
+      - paper_agents_pg:/var/lib/postgresql/data
+
+volumes:
+  paper_agents_pg:

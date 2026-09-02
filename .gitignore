@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dashboard/dist/
+dashboard/.angular/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Prisma generated client (run `npx prisma generate`)
+generated/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local agent skill packs (not part of this repo)
+.agents/
+.claude/skills/
+.windsurf/
+skills-lock.json
+
+# Nest / TypeScript
+*.tsbuildinfo

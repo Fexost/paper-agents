@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.angular/
+
+# Test / coverage
+coverage/
+
+# Logs
+*.log
