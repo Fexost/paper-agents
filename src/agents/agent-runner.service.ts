@@ -124,7 +124,10 @@ export class AgentRunnerService {
   }
 
   private parseJson<T>(raw: string): T {
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    const cleaned = raw
+      .replace(/^```json\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
     return JSON.parse(cleaned) as T;
   }
 }

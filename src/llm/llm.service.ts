@@ -42,7 +42,9 @@ export class LlmService {
           model: provider.model,
           messages,
           temperature: options.temperature ?? 0.2,
-          response_format: options.jsonMode ? { type: 'json_object' } : undefined,
+          response_format: options.jsonMode
+            ? { type: 'json_object' }
+            : undefined,
         });
 
         const content = response.choices[0]?.message?.content?.trim();
@@ -50,7 +52,9 @@ export class LlmService {
           throw new Error('Empty completion');
         }
 
-        this.logger.log(`LLM response via ${provider.name} (${provider.model})`);
+        this.logger.log(
+          `LLM response via ${provider.name} (${provider.model})`,
+        );
         return {
           content,
           provider: provider.name,
@@ -77,7 +81,8 @@ export class LlmService {
 
     const order = [...new Set([primary, ...fallbacks])];
 
-    return order.map((name) => {
+    return order.map((rawName) => {
+      const name = rawName as LlmProviderName;
       const role = name === primary ? 'primary' : 'fallback';
 
       if (name === 'mock') {
@@ -90,7 +95,7 @@ export class LlmService {
         };
       }
 
-      const built = this.buildProvider(name as LlmProviderName);
+      const built = this.buildProvider(name);
       if (!built) {
         return {
           name,
@@ -108,7 +113,7 @@ export class LlmService {
         role,
         ready: true,
         model: built.model,
-        baseUrl: this.getProviderBaseUrl(name as LlmProviderName),
+        baseUrl: this.getProviderBaseUrl(name),
       };
     });
   }
@@ -175,11 +180,11 @@ export class LlmService {
           'OMNIROUTE_BASE_URL',
           'http://localhost:20128/v1',
         );
-        const apiKey = this.config.get<string>('OMNIROUTE_API_KEY', 'omniroute');
-        const model = this.config.get<string>(
-          'OMNIROUTE_MODEL',
-          'gpt-4o-mini',
+        const apiKey = this.config.get<string>(
+          'OMNIROUTE_API_KEY',
+          'omniroute',
         );
+        const model = this.config.get<string>('OMNIROUTE_MODEL', 'gpt-4o-mini');
         return {
           name,
           model,

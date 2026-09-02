@@ -15,7 +15,8 @@ export class ScorecardService {
       return 0;
     }
 
-    const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+    const mean =
+      returns.reduce((sum, value) => sum + value, 0) / returns.length;
     const variance =
       returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
       (returns.length - 1);
