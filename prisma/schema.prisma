@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AgentLayer {
+  MACRO
+  SECTOR
+  DECISION
+}
+
+enum Direction {
+  LONG
+  SHORT
+  NEUTRAL
+}
+
+enum MarketRegime {
+  RISK_ON
+  RISK_OFF
+  NEUTRAL
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum TradeAction {
+  BUY
+  SELL
+  HOLD
+}
+
+enum AutoresearchStatus {
+  EVALUATING
+  KEPT
+  REVERTED
+}
+
+model Agent {
+  id            String        @id @default(cuid())
+  slug          String        @unique
+  name          String
+  layer         AgentLayer
+  darwinWeight  Float         @default(1.0)
+  rollingSharpe Float         @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  prompts       AgentPrompt[]
+  recommendations Recommendation[]
+  scoreSnapshots ScoreSnapshot[]
+  autoresearchExperiments AutoresearchExperiment[]
+
+  @@index([layer])
+}
+
+model AutoresearchExperiment {
+  id                String             @id @default(cuid())
+  agentId           String
+  status            AutoresearchStatus @default(EVALUATING)
+  baselineSharpe    Float
+  candidateSharpe   Float?
+  evaluationDays    Int                @default(5)
+  daysCompleted     Int                @default(0)
+  changeSummary     String?            @db.Text
+  startedAt         DateTime           @default(now())
+  completedAt       DateTime?
+  baselinePromptId  String
+  candidatePromptId String
+  agent             Agent              @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model AgentPrompt {
+  id                 String   @id @default(cuid())
+  agentId            String
+  version            Int
+  content            String   @db.Text
+  isActive           Boolean  @default(false)
+  autoresearchNote   String?
+  createdAt          DateTime @default(now())
+  agent              Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@index([agentId, isActive])
+}
+
+model DailyRun {
+  id          String        @id @default(cuid())
+  runDate     DateTime      @unique @db.Date
+  status      RunStatus     @default(PENDING)
+  regime      MarketRegime?
+  summary     String?       @db.Text
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  recommendations Recommendation[]
+  trades      PaperTrade[]
+
+  @@index([runDate])
+}
+
+model Recommendation {
+  id              String     @id @default(cuid())
+  runId           String
+  agentId         String
+  ticker          String
+  direction       Direction
+  conviction      Int
+  entryPrice      Float?
+  rationale       String     @db.Text
+  forwardReturn1d Float?
+  forwardReturn5d Float?
+  isHit           Boolean?
+  scoredAt        DateTime?
+  createdAt       DateTime   @default(now())
+  run             DailyRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  agent           Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([agentId])
+  @@index([ticker])
+}
+
+model ScoreSnapshot {
+  id        String   @id @default(cuid())
+  agentId   String
+  snapshotDate DateTime @db.Date
+  sharpe    Float
+  hitRate   Float
+  createdAt DateTime @default(now())
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, snapshotDate])
+}
+
+model PaperAccount {
+  id           String   @id @default("default")
+  cashBalance  Float    @default(100000)
+  startingCash Float    @default(100000)
+  updatedAt    DateTime @updatedAt
+}
+
+model PaperPosition {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  shares    Float
+  avgCost   Float
+  openedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaperTrade {
+  id        String      @id @default(cuid())
+  runId     String?
+  ticker    String
+  action    TradeAction
+  shares    Float
+  price     Float
+  reason    String      @db.Text
+  createdAt DateTime    @default(now())
+  run       DailyRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([ticker])
+  @@index([runId])
+}
