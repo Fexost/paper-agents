@@ -4,7 +4,11 @@ import { AutoresearchStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { ScorecardService } from './scorecard.service';
-import { PaginatedResult, paginate, parseLimit } from '../common/pagination.util';
+import {
+  PaginatedResult,
+  paginate,
+  parseLimit,
+} from '../common/pagination.util';
 
 export interface ActiveExperimentView {
   id: string;
@@ -65,7 +69,11 @@ export class AutoresearchService {
   async listExperiments(
     limitRaw?: string,
     cursor?: string,
-  ): Promise<PaginatedResult<ActiveExperimentView & { agent: { slug: string; name: string } }>> {
+  ): Promise<
+    PaginatedResult<
+      ActiveExperimentView & { agent: { slug: string; name: string } }
+    >
+  > {
     const limit = parseLimit(limitRaw, 5, 100);
 
     const rows = await this.prisma.autoresearchExperiment.findMany({
@@ -135,7 +143,8 @@ export class AutoresearchService {
     if (!worst || worst.prompts.length === 0) {
       return {
         status: 'skipped',
-        reason: 'No eligible agent (all recently experimented or missing prompt)',
+        reason:
+          'No eligible agent (all recently experimented or missing prompt)',
       };
     }
 
@@ -261,7 +270,10 @@ export class AutoresearchService {
     });
 
     if (!experiment || experiment.status !== AutoresearchStatus.EVALUATING) {
-      return { status: 'skipped', reason: 'Experiment not found or already finalized' };
+      return {
+        status: 'skipped',
+        reason: 'Experiment not found or already finalized',
+      };
     }
 
     const candidateSharpe = await this.computeSharpeSince(
@@ -350,7 +362,10 @@ export class AutoresearchService {
     ]);
   }
 
-  private async computeSharpeSince(agentId: string, since: Date): Promise<number> {
+  private async computeSharpeSince(
+    agentId: string,
+    since: Date,
+  ): Promise<number> {
     const recs = await this.prisma.recommendation.findMany({
       where: {
         agentId,

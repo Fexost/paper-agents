@@ -1,7 +1,7 @@
 export type LlmProviderName = 'openai' | 'omniroute' | 'ollama' | 'mock';
 
 export interface LlmProviderStatus {
-  name: LlmProviderName | string;
+  name: LlmProviderName;
   role: 'primary' | 'fallback';
   ready: boolean;
   model?: string;

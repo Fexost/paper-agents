@@ -4,7 +4,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MarketDataService } from '../market/market-data.service';
 import { TradeAction } from '../../generated/prisma/client';
 import { CioAction } from '../agents/agent-runner.service';
-import { PaginatedResult, paginate, parseLimit } from '../common/pagination.util';
+import {
+  PaginatedResult,
+  paginate,
+  parseLimit,
+} from '../common/pagination.util';
 
 export interface ExecutedPaperTrade {
   id: string;
@@ -143,9 +147,7 @@ export class PaperTradingService {
 
     const rows = await this.prisma.paperTrade.findMany({
       take: limit + 1,
-      ...(cursor
-        ? { skip: 1, cursor: { id: cursor } }
-        : {}),
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
 
@@ -236,8 +238,7 @@ export class PaperTradingService {
         if (existing) {
           const totalShares = existing.shares + shares;
           const avgCost =
-            (existing.avgCost * existing.shares + price * shares) /
-            totalShares;
+            (existing.avgCost * existing.shares + price * shares) / totalShares;
           await this.prisma.paperPosition.update({
             where: { ticker },
             data: { shares: totalShares, avgCost },
@@ -306,7 +307,7 @@ export class PaperTradingService {
         data: {
           runId,
           ticker,
-          action: action.action as TradeAction,
+          action: action.action,
           shares,
           price,
           costBasis,

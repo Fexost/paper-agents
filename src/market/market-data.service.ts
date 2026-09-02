@@ -19,7 +19,15 @@ export interface MarketSnapshot {
 @Injectable()
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
-  private readonly watchlist = ['AAPL', 'MSFT', 'NVDA', 'SPY', 'QQQ', 'XLE', 'XLF'];
+  private readonly watchlist = [
+    'AAPL',
+    'MSFT',
+    'NVDA',
+    'SPY',
+    'QQQ',
+    'XLE',
+    'XLF',
+  ];
   private lastSource: 'mock' | 'finnhub' = 'mock';
   private lastFinnhubError: string | null = null;
 
@@ -40,11 +48,15 @@ export class MarketDataService {
   }
 
   private get finnhubBackoffMs(): number {
-    return Number(this.config.get<string>('MARKET_FINNHUB_BACKOFF_MS', '60000'));
+    return Number(
+      this.config.get<string>('MARKET_FINNHUB_BACKOFF_MS', '60000'),
+    );
   }
 
   getMarketStatus() {
-    const finnhubConfigured = Boolean(this.config.get<string>('FINNHUB_API_KEY'));
+    const finnhubConfigured = Boolean(
+      this.config.get<string>('FINNHUB_API_KEY'),
+    );
     const cacheAgeMs =
       this.snapshotCache && this.cacheExpiresAt > Date.now()
         ? this.cacheExpiresAt - Date.now()
@@ -65,13 +77,11 @@ export class MarketDataService {
     };
   }
 
-  async getSnapshot(options: { force?: boolean } = {}): Promise<MarketSnapshot> {
+  async getSnapshot(
+    options: { force?: boolean } = {},
+  ): Promise<MarketSnapshot> {
     const now = Date.now();
-    if (
-      !options.force &&
-      this.snapshotCache &&
-      now < this.cacheExpiresAt
-    ) {
+    if (!options.force && this.snapshotCache && now < this.cacheExpiresAt) {
       return this.snapshotCache;
     }
 
@@ -79,10 +89,12 @@ export class MarketDataService {
       return this.inflightSnapshot;
     }
 
-    this.inflightSnapshot = this.resolveSnapshot(now, options.force ?? false)
-      .finally(() => {
-        this.inflightSnapshot = null;
-      });
+    this.inflightSnapshot = this.resolveSnapshot(
+      now,
+      options.force ?? false,
+    ).finally(() => {
+      this.inflightSnapshot = null;
+    });
 
     return this.inflightSnapshot;
   }
@@ -175,7 +187,9 @@ export class MarketDataService {
     }
 
     const indices = quotes.filter((q) => ['SPY', 'QQQ'].includes(q.ticker));
-    const watchlist = quotes.filter((q) => !['SPY', 'QQQ', 'VIX'].includes(q.ticker));
+    const watchlist = quotes.filter(
+      (q) => !['SPY', 'QQQ', 'VIX'].includes(q.ticker),
+    );
     const vixQuote = quotes.find((q) => q.ticker === 'VIX');
     const vix = vixQuote && vixQuote.price > 0 ? vixQuote : undefined;
 

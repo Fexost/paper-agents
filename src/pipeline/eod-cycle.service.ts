@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   Direction,
-  MarketRegime,
   Prisma,
   RunStatus,
   TradeAction,
@@ -48,9 +47,11 @@ export class EodCycleService {
 
     const snapshot = await this.market.getSnapshot({ force: true });
     const prices = Object.fromEntries(
-      [...snapshot.indices, ...snapshot.watchlist, ...(snapshot.vix ? [snapshot.vix] : [])].map(
-        (quote) => [quote.ticker, quote.price],
-      ),
+      [
+        ...snapshot.indices,
+        ...snapshot.watchlist,
+        ...(snapshot.vix ? [snapshot.vix] : []),
+      ].map((quote) => [quote.ticker, quote.price]),
     );
 
     await this.scorecard.scoreOpenRecommendations(prices);
@@ -238,7 +239,7 @@ export class EodCycleService {
         data: {
           status: RunStatus.COMPLETED,
           completedAt: new Date(),
-          regime: macro.regime as MarketRegime,
+          regime: macro.regime,
           summary: cio.market_view,
           skippedActions:
             skipped.length > 0

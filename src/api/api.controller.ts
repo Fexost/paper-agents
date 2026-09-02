@@ -206,9 +206,7 @@ export class ApiController {
   }
 
   @Post('pipeline/run')
-  runPipeline(
-    @Body() body: { autoresearch?: boolean; force?: boolean } = {},
-  ) {
+  runPipeline(@Body() body: { autoresearch?: boolean; force?: boolean } = {}) {
     return this.eod.runDailyCycle({
       runAutoresearch: body.autoresearch ?? false,
       force: body.force ?? false,
