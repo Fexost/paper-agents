@@ -14,7 +14,9 @@ export class ApiService {
   constructor(private readonly http: HttpClient) {}
 
   health() {
-    return this.http.get<{ ok: boolean }>('/api/health');
+    return this.http.get<{ ok: boolean; service: string; port: number }>(
+      '/api/health',
+    );
   }
 
   getStatus() {
@@ -27,6 +29,13 @@ export class ApiService {
 
   getPortfolio() {
     return this.http.get<Portfolio>('/api/portfolio');
+  }
+
+  resetPortfolio() {
+    return this.http.post<Portfolio & { message?: string }>(
+      '/api/portfolio/reset',
+      {},
+    );
   }
 
   getRuns() {

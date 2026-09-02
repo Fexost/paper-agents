@@ -11,7 +11,15 @@ export interface Agent {
 
 export interface Portfolio {
   account: { cashBalance: number; startingCash: number };
-  positions: Array<{ ticker: string; shares: number; avgCost: number }>;
+  positions: Array<{
+    ticker: string;
+    shares: number;
+    avgCost: number;
+    currentPrice?: number;
+    marketValue?: number;
+    unrealizedPnl?: number;
+    unrealizedPnlPct?: number;
+  }>;
   recentTrades: Array<{
     id: string;
     ticker: string;
@@ -21,15 +29,30 @@ export interface Portfolio {
     reason: string;
     createdAt: string;
   }>;
-  totals: { cash: number; positionValue: number; equity: number };
+  totals: {
+    cash: number;
+    costBasis?: number;
+    positionValue: number;
+    equity: number;
+    unrealizedPnl?: number;
+  };
+}
+
+export interface SkippedAction {
+  ticker: string;
+  action: string;
+  reason: string;
+  requestedShares?: number;
 }
 
 export interface DailyRun {
   id: string;
   runDate: string;
+  cycleNumber?: number;
   status: string;
   regime: string | null;
   summary: string | null;
+  skippedActions?: SkippedAction[];
   recommendations?: Array<{
     ticker: string;
     direction: string;
@@ -66,10 +89,38 @@ export interface AutoresearchExperiment {
   agent?: { slug: string; name: string; rollingSharpe?: number };
 }
 
+export interface LlmProviderStatus {
+  name: string;
+  role: 'primary' | 'fallback';
+  ready: boolean;
+  model?: string;
+  baseUrl?: string;
+  note?: string;
+}
+
+export interface MarketStatus {
+  source: 'mock' | 'finnhub';
+  finnhubConfigured: boolean;
+  finnhubError: string | null;
+  usingLiveData: boolean;
+}
+
+export interface ApiHealth {
+  ok: boolean;
+  service: string;
+  port: number;
+}
+
 export interface SystemStatus {
+  api: ApiHealth;
+  database: 'ok' | 'error';
+  serverTime: string;
   marketDataSource: 'mock' | 'finnhub';
+  market: MarketStatus;
   llmPrimary: string;
   llmFallbacks: string;
+  llmProviders: LlmProviderStatus[];
+  llmReady: boolean;
   autoresearchEvalDays: number;
   activeExperiment: AutoresearchExperiment | null;
 }

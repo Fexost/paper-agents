@@ -13,6 +13,7 @@ import { AutoresearchService } from '../pipeline/autoresearch.service';
 import { PaperTradingService } from '../paper/paper-trading.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MarketDataService } from '../market/market-data.service';
+import { LlmService } from '../llm/llm.service';
 
 @Controller('api')
 export class ApiController {
@@ -23,11 +24,16 @@ export class ApiController {
     private readonly prisma: PrismaService,
     private readonly market: MarketDataService,
     private readonly config: ConfigService,
+    private readonly llm: LlmService,
   ) {}
 
   @Get('health')
   health() {
-    return { ok: true, service: 'paper-agents' };
+    return {
+      ok: true,
+      service: 'paper-agents',
+      port: Number(this.config.get<string>('PORT', '3001')),
+    };
   }
 
   @Get('status')
@@ -35,10 +41,34 @@ export class ApiController {
     const activeExperiment = await this.autoresearch.getActiveExperiment();
     await this.market.getSnapshot();
 
+    let database: 'ok' | 'error' = 'error';
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      database = 'ok';
+    } catch {
+      database = 'error';
+    }
+
+    const llmProviders = this.llm.getProviderStatus();
+    const market = this.market.getMarketStatus();
+
     return {
-      marketDataSource: this.market.getDataSource(),
+      api: {
+        ok: true,
+        service: 'paper-agents',
+        port: Number(this.config.get<string>('PORT', '3001')),
+      },
+      database,
+      serverTime: new Date().toISOString(),
+      marketDataSource: market.source,
+      market,
       llmPrimary: this.config.get<string>('LLM_PRIMARY', 'mock'),
-      llmFallbacks: this.config.get<string>('LLM_FALLBACKS', 'ollama,omniroute,openai'),
+      llmFallbacks: this.config.get<string>(
+        'LLM_FALLBACKS',
+        'ollama,omniroute,openai',
+      ),
+      llmProviders,
+      llmReady: llmProviders.some((p) => p.ready && p.name !== 'mock'),
       autoresearchEvalDays: this.autoresearch.getEvaluationDays(),
       activeExperiment,
     };
@@ -64,8 +94,8 @@ export class ApiController {
   @Get('runs')
   async listRuns() {
     return this.prisma.dailyRun.findMany({
-      orderBy: { runDate: 'desc' },
-      take: 20,
+      orderBy: [{ runDate: 'desc' }, { cycleNumber: 'desc' }],
+      take: 50,
       include: {
         _count: { select: { recommendations: true, trades: true } },
       },
@@ -75,7 +105,7 @@ export class ApiController {
   @Get('runs/latest')
   async latestRun() {
     return this.prisma.dailyRun.findFirst({
-      orderBy: { runDate: 'desc' },
+      orderBy: [{ runDate: 'desc' }, { cycleNumber: 'desc' }],
       include: {
         recommendations: {
           include: { agent: { select: { slug: true, name: true } } },
@@ -88,6 +118,16 @@ export class ApiController {
   @Get('portfolio')
   getPortfolio() {
     return this.paper.getPortfolio();
+  }
+
+  @Post('portfolio/reset')
+  async resetPortfolio() {
+    const portfolio = await this.paper.resetPortfolio();
+    return {
+      ...portfolio,
+      message:
+        'Paper cash and positions reset. Agent prompts, Darwin weights, Sharpe, hit rate, run history, and autoresearch were kept.',
+    };
   }
 
   @Get('autoresearch/experiments')

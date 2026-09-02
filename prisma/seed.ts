@@ -49,6 +49,36 @@ async function main() {
           autoresearchNote: 'Initial seed prompt',
         },
       });
+      continue;
+    }
+
+    if (
+      existingActive.autoresearchNote === 'Initial seed prompt' &&
+      existingActive.content.trim() !== content.trim()
+    ) {
+      const nextVersion =
+        (
+          await prisma.agentPrompt.aggregate({
+            where: { agentId: record.id },
+            _max: { version: true },
+          })
+        )._max.version ?? 0;
+
+      await prisma.$transaction([
+        prisma.agentPrompt.updateMany({
+          where: { agentId: record.id, isActive: true },
+          data: { isActive: false },
+        }),
+        prisma.agentPrompt.create({
+          data: {
+            agentId: record.id,
+            version: nextVersion + 1,
+            content,
+            isActive: true,
+            autoresearchNote: 'Synced from prompts/ on seed',
+          },
+        }),
+      ]);
     }
   }
 

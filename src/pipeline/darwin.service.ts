@@ -13,23 +13,20 @@ export class DarwinService {
       orderBy: { rollingSharpe: 'desc' },
     });
 
-    if (agents.length < 4) {
+    if (agents.length < 2) {
       return agents;
     }
 
-    const quartileSize = Math.max(1, Math.floor(agents.length / 4));
-    const top = new Set(agents.slice(0, quartileSize).map((a) => a.id));
-    const bottom = new Set(
-      agents.slice(agents.length - quartileSize).map((a) => a.id),
-    );
+    const top = new Set([agents[0].id]);
+    const bottom = new Set([agents[agents.length - 1].id]);
 
     const updates = [];
 
     for (const agent of agents) {
       let weight = agent.darwinWeight;
-      if (top.has(agent.id)) {
+      if (top.has(agent.id) && agents.length > 1) {
         weight = Math.min(this.ceiling, weight * 1.05);
-      } else if (bottom.has(agent.id)) {
+      } else if (bottom.has(agent.id) && agents.length > 2) {
         weight = Math.max(this.floor, weight * 0.95);
       }
 

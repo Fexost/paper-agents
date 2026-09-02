@@ -166,7 +166,7 @@ Proxy config: `dashboard/proxy.conf.json` → `http://localhost:3001`
 ## Mental model for agents
 
 - **Paper run ≠ automatic learning.** Learning happens via prompt versions, Darwin weights, score snapshots, and autoresearch experiments.
-- **One paper run per calendar day** by default (`DailyRun.runDate` unique). Use `force: true` to delete today's run and re-run.
+- **One paper run per calendar day** by default (`DailyRun` is unique per `runDate` + `cycleNumber`). Use `force: true` to start **another cycle** the same day without deleting prior runs, trades, or recommendations.
 - **Mock LLM** returns deterministic JSON for local dev when Ollama/OpenAI are unavailable.
 - **Paper only by design.** Do not add live trading without explicit user request and strong safeguards.
 

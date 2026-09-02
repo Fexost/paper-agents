@@ -71,6 +71,24 @@
   border-color: #2d5a40;
 }
 
+.badge.offline {
+  background: #3a2030;
+  color: var(--bad);
+  border-color: #5a3040;
+}
+
+.badge.ready {
+  background: #1d3a2d;
+  color: var(--good);
+  border-color: #2d5a40;
+}
+
+.badge.warn {
+  background: #3a3020;
+  color: var(--warn);
+  border-color: #5a4a20;
+}
+
 .badge.live {
   background: #1d2d4a;
   color: #8eb4ff;
@@ -112,6 +130,104 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
+  margin-top: 1rem;
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.status-header h2 {
+  margin: 0;
+}
+
+.status-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.status-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.status-card.ok {
+  border-color: #2d5a40;
+}
+
+.status-card.bad {
+  border-color: #5a3040;
+}
+
+.status-card.warn {
+  border-color: #5a4a20;
+}
+
+.status-card .detail {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.offline-banner {
+  border-color: #5a3040;
+  background: #241820;
+}
+
+.offline-banner p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.provider-list {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.provider-list h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.provider-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.provider-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.provider-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  text-align: right;
+}
+
+.provider-note {
+  font-size: 0.8rem;
+  color: var(--warn);
 }
 
 .system-status .label {
@@ -240,6 +356,16 @@ td {
   max-width: 280px;
 }
 
+.skipped-block {
+  margin-top: 1rem;
+}
+
+.skipped-block h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .trades {
   list-style: none;
   padding: 0;
@@ -289,6 +415,17 @@ button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+}
+
+button.danger {
+  background: #3a2030;
+  border-color: #5a3040;
+  color: var(--bad);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--bad);
+  color: #ffb3c4;
 }
 
 .experiment-active {

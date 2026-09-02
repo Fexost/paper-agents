@@ -10,26 +10,73 @@
       <p class="sub">Live paper-trading dashboard</p>
     </div>
     <div class="actions">
-      <span class="badge" [class.online]="apiOnline">{{ apiOnline ? 'API online' : 'API offline' }}</span>
-      <span class="badge" [class.live]="status?.marketDataSource === 'finnhub'">
-        Market: {{ status?.marketDataSource || 'unknown' }}
+      <span class="badge" [class.online]="apiOnline" [class.offline]="!apiOnline">
+        {{ apiOnline ? 'API online' : 'API offline' }}
       </span>
-      <span class="badge">LLM: {{ status?.llmPrimary || 'unknown' }}</span>
+      <span class="badge" [class.live]="status?.market?.usingLiveData" [class.warn]="status?.market?.finnhubConfigured && !status?.market?.usingLiveData">
+        Market: {{ marketStatusLabel() }}
+      </span>
+      <span class="badge" [class.ready]="status?.llmReady" [class.warn]="status && !status.llmReady">
+        LLM: {{ status?.llmPrimary || 'unknown' }}
+      </span>
       <button (click)="refresh()">Refresh</button>
+      <button
+        class="danger"
+        type="button"
+        (click)="confirmResetPortfolio()"
+        [disabled]="resettingPortfolio || !apiOnline"
+      >
+        {{ resettingPortfolio ? 'Resetting...' : 'Reset Paper Portfolio' }}
+      </button>
     </div>
   </header>
 
+  <section class="panel offline-banner" *ngIf="!apiOnline && !loading">
+    <strong>API unreachable</strong>
+    <p>{{ statusError || 'Start the NestJS API with npm run start:dev (port 3001), then refresh.' }}</p>
+  </section>
+
   <section class="panel system-status" *ngIf="status">
-    <h2>System Status</h2>
-    <div class="status-grid">
-      <div>
+    <div class="status-header">
+      <h2>System Status</h2>
+      <span class="muted">Server time: {{ status.serverTime | date:'medium' }}</span>
+    </div>
+
+    <div class="status-cards">
+      <article class="status-card" [class.ok]="apiOnline" [class.bad]="!apiOnline">
+        <span class="label">API</span>
+        <strong>{{ apiOnline ? status.api.service : 'offline' }}</strong>
+        <span class="detail" *ngIf="apiOnline">:{{ status.api.port }} · proxy → /api</span>
+      </article>
+
+      <article class="status-card" [class.ok]="status.database === 'ok'" [class.bad]="status.database === 'error'">
+        <span class="label">Database</span>
+        <strong>{{ status.database === 'ok' ? 'connected' : 'error' }}</strong>
+        <span class="detail">Postgres via Prisma</span>
+      </article>
+
+      <article class="status-card" [class.ok]="status.market.usingLiveData" [class.warn]="status.market.finnhubConfigured && !status.market.usingLiveData">
         <span class="label">Market data</span>
-        <strong>{{ status.marketDataSource }}</strong>
-      </div>
-      <div>
-        <span class="label">LLM primary</span>
+        <strong>{{ status.market.usingLiveData ? 'finnhub' : 'mock' }}</strong>
+        <span class="detail" *ngIf="status.market.finnhubConfigured && !status.market.usingLiveData">
+          Key set but using mock
+        </span>
+        <span class="detail" *ngIf="!status.market.finnhubConfigured">
+          Add FINNHUB_API_KEY for live quotes
+        </span>
+        <span class="detail" *ngIf="status.market.finnhubError">
+          {{ status.market.finnhubError }}
+        </span>
+      </article>
+
+      <article class="status-card" [class.ok]="status.llmReady" [class.warn]="!status.llmReady">
+        <span class="label">LLM</span>
         <strong>{{ status.llmPrimary }}</strong>
-      </div>
+        <span class="detail">{{ readyLlmCount() }} provider(s) ready</span>
+      </article>
+    </div>
+
+    <div class="status-grid">
       <div>
         <span class="label">LLM fallbacks</span>
         <strong>{{ status.llmFallbacks }}</strong>
@@ -44,7 +91,23 @@
       </div>
       <div>
         <span class="label">Experiments kept / reverted</span>
-        <strong>{{ keptCount() }} / {{ revertedCount() }}</strong>
+        <strong *ngIf="experiments.length">{{ keptCount() }} / {{ revertedCount() }}</strong>
+        <strong *ngIf="!experiments.length" class="muted">none yet</strong>
+      </div>
+    </div>
+
+    <div class="provider-list" *ngIf="status.llmProviders.length">
+      <h3>LLM providers</h3>
+      <div class="provider-row" *ngFor="let p of status.llmProviders">
+        <div class="provider-main">
+          <span class="badge" [class.ready]="p.ready" [class.warn]="!p.ready">{{ p.role }}</span>
+          <strong>{{ p.name }}</strong>
+          <span class="muted" *ngIf="p.model">{{ p.model }}</span>
+        </div>
+        <div class="provider-meta">
+          <span class="muted" *ngIf="p.baseUrl">{{ p.baseUrl }}</span>
+          <span class="provider-note" *ngIf="p.note">{{ p.note }}</span>
+        </div>
       </div>
     </div>
   </section>
@@ -65,7 +128,7 @@
       </label>
       <label class="checkbox">
         <input type="checkbox" [(ngModel)]="forceRerun" />
-        Force re-run today
+        Force another cycle today
       </label>
     </div>
   </section>
@@ -94,7 +157,10 @@
     <article class="card">
       <h3>Last Run</h3>
       <p class="value small">{{ latestRun?.status || 'none' }}</p>
-      <p class="muted">{{ latestRun?.regime || 'No regime yet' }}</p>
+      <p class="muted">
+        {{ latestRun?.regime || 'No regime yet' }}
+        <span *ngIf="latestRun?.cycleNumber"> · cycle {{ latestRun!.cycleNumber }}</span>
+      </p>
     </article>
   </section>
 
@@ -194,14 +260,18 @@
       <h2>Portfolio</h2>
       <table *ngIf="portfolio?.positions?.length; else noPos">
         <thead>
-          <tr><th>Ticker</th><th>Shares</th><th>Avg Cost</th><th>Value</th></tr>
+          <tr><th>Ticker</th><th>Shares</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>P&amp;L</th></tr>
         </thead>
         <tbody>
           <tr *ngFor="let p of portfolio!.positions">
             <td>{{ p.ticker }}</td>
             <td>{{ p.shares }}</td>
             <td>{{ p.avgCost | currency }}</td>
-            <td>{{ p.shares * p.avgCost | currency }}</td>
+            <td>{{ (p.currentPrice ?? p.avgCost) | currency }}</td>
+            <td>{{ (p.marketValue ?? p.shares * p.avgCost) | currency }}</td>
+            <td [class.good]="(p.unrealizedPnl ?? 0) >= 0" [class.bad]="(p.unrealizedPnl ?? 0) < 0">
+              {{ (p.unrealizedPnl ?? 0) >= 0 ? '+' : '' }}{{ (p.unrealizedPnl ?? 0) | currency }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -222,11 +292,12 @@
     <h2>Run History</h2>
     <table *ngIf="runs.length; else noRuns">
       <thead>
-        <tr><th>Date</th><th>Status</th><th>Regime</th><th>Recs</th><th>Trades</th><th>Summary</th></tr>
+        <tr><th>Date</th><th>Cycle</th><th>Status</th><th>Regime</th><th>Recs</th><th>Trades</th><th>Summary</th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let r of runs">
           <td>{{ r.runDate | date:'mediumDate' }}</td>
+          <td>{{ r.cycleNumber ?? 1 }}</td>
           <td><span class="badge" [ngClass]="statusClass(r.status)">{{ r.status }}</span></td>
           <td>{{ r.regime || '—' }}</td>
           <td>{{ r._count?.recommendations ?? 0 }}</td>
@@ -278,7 +349,23 @@
             </tr>
           </tbody>
         </table>
-        <ng-template #noRunTrades><p class="muted">No trades</p></ng-template>
+        <ng-template #noRunTrades><p class="muted">No trades executed</p></ng-template>
+        <div *ngIf="latestRun.skippedActions?.length" class="skipped-block">
+          <h4>Skipped / blocked actions</h4>
+          <table>
+            <thead>
+              <tr><th>Action</th><th>Ticker</th><th>Requested</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let s of latestRun.skippedActions">
+                <td>{{ s.action }}</td>
+                <td>{{ s.ticker }}</td>
+                <td>{{ s.requestedShares ?? '—' }}</td>
+                <td class="rationale">{{ s.reason }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>

@@ -96,17 +96,20 @@ model AgentPrompt {
 }
 
 model DailyRun {
-  id          String        @id @default(cuid())
-  runDate     DateTime      @unique @db.Date
-  status      RunStatus     @default(PENDING)
-  regime      MarketRegime?
-  summary     String?       @db.Text
-  startedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime      @default(now())
+  id              String        @id @default(cuid())
+  runDate         DateTime      @db.Date
+  cycleNumber     Int           @default(1)
+  status          RunStatus     @default(PENDING)
+  regime          MarketRegime?
+  summary         String?       @db.Text
+  skippedActions  Json?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime      @default(now())
   recommendations Recommendation[]
-  trades      PaperTrade[]
+  trades          PaperTrade[]
 
+  @@unique([runDate, cycleNumber])
   @@index([runDate])
 }
 

@@ -6,6 +6,7 @@ import {
   LlmCompletionResult,
   LlmMessage,
   LlmProviderName,
+  LlmProviderStatus,
 } from './llm.types';
 
 interface ProviderConfig {
@@ -64,6 +65,74 @@ export class LlmService {
     }
 
     throw new Error(`All LLM providers failed:\n${errors.join('\n')}`);
+  }
+
+  getProviderStatus(): LlmProviderStatus[] {
+    const primary = this.config.get<string>('LLM_PRIMARY', 'mock');
+    const fallbacks = this.config
+      .get<string>('LLM_FALLBACKS', 'ollama,omniroute,openai')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    const order = [...new Set([primary, ...fallbacks])];
+
+    return order.map((name) => {
+      const role = name === primary ? 'primary' : 'fallback';
+
+      if (name === 'mock') {
+        return {
+          name,
+          role,
+          ready: true,
+          model: 'builtin',
+          note: 'No real LLM — ensure a fallback provider is ready',
+        };
+      }
+
+      const built = this.buildProvider(name as LlmProviderName);
+      if (!built) {
+        return {
+          name,
+          role,
+          ready: false,
+          note:
+            name === 'openai'
+              ? 'Set OPENAI_API_KEY in .env'
+              : `Provider "${name}" is not configured`,
+        };
+      }
+
+      return {
+        name,
+        role,
+        ready: true,
+        model: built.model,
+        baseUrl: this.getProviderBaseUrl(name as LlmProviderName),
+      };
+    });
+  }
+
+  private getProviderBaseUrl(name: LlmProviderName): string | undefined {
+    switch (name) {
+      case 'ollama':
+        return this.config.get<string>(
+          'OLLAMA_BASE_URL',
+          'http://localhost:11434/v1',
+        );
+      case 'omniroute':
+        return this.config.get<string>(
+          'OMNIROUTE_BASE_URL',
+          'http://localhost:20128/v1',
+        );
+      case 'openai':
+        return this.config.get<string>(
+          'OPENAI_BASE_URL',
+          'https://api.openai.com/v1',
+        );
+      default:
+        return undefined;
+    }
   }
 
   private buildProviders(): ProviderConfig[] {

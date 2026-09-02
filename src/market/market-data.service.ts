@@ -21,11 +21,18 @@ export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly watchlist = ['AAPL', 'MSFT', 'NVDA', 'SPY', 'QQQ', 'XLE', 'XLF'];
   private lastSource: 'mock' | 'finnhub' = 'mock';
+  private lastFinnhubError: string | null = null;
 
   constructor(private readonly config: ConfigService) {}
 
-  getDataSource(): 'mock' | 'finnhub' {
-    return this.lastSource;
+  getMarketStatus() {
+    const finnhubConfigured = Boolean(this.config.get<string>('FINNHUB_API_KEY'));
+    return {
+      source: this.lastSource,
+      finnhubConfigured,
+      finnhubError: this.lastFinnhubError,
+      usingLiveData: this.lastSource === 'finnhub',
+    };
   }
 
   async getSnapshot(): Promise<MarketSnapshot> {
@@ -34,13 +41,17 @@ export class MarketDataService {
       try {
         const snapshot = await this.fetchFromFinnhub(apiKey);
         this.lastSource = 'finnhub';
+        this.lastFinnhubError = null;
         return snapshot;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Finnhub fetch failed';
+        this.lastFinnhubError = message;
         this.logger.warn(`Falling back to mock market data: ${message}`);
       }
     }
+
+    this.lastFinnhubError = null;
 
     this.lastSource = 'mock';
     return this.mockSnapshot();
@@ -59,26 +70,28 @@ export class MarketDataService {
 
   private async fetchFromFinnhub(apiKey: string): Promise<MarketSnapshot> {
     const tickers = [...new Set([...this.watchlist, 'VIX'])];
-    const quotes = await Promise.all(
-      tickers.map(async (ticker) => {
-        const symbol = ticker === 'VIX' ? '^VIX' : ticker;
-        const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`;
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Finnhub error for ${ticker}`);
-        }
-        const data = (await response.json()) as {
-          c?: number;
-          dp?: number;
-        };
-        return {
-          ticker,
-          price: data.c ?? 0,
-          changePct: data.dp ?? 0,
-          asOf: new Date().toISOString(),
-        };
-      }),
-    );
+    const quotes: Quote[] = [];
+
+    for (const ticker of tickers) {
+      const symbol = ticker === 'VIX' ? '^VIX' : ticker;
+      const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Finnhub error for ${ticker}`);
+      }
+      const data = (await response.json()) as {
+        c?: number;
+        dp?: number;
+      };
+      quotes.push({
+        ticker,
+        price: data.c ?? 0,
+        changePct: data.dp ?? 0,
+        asOf: new Date().toISOString(),
+      });
+      // Free tier ~60 calls/min — pace bursts when force re-running cycles.
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    }
 
     const indices = quotes.filter((q) => ['SPY', 'QQQ'].includes(q.ticker));
     const watchlist = quotes.filter((q) => !['SPY', 'QQQ', 'VIX'].includes(q.ticker));
@@ -106,12 +119,15 @@ export class MarketDataService {
       VIX: 16,
     };
 
-    const toQuote = (ticker: string): Quote => ({
-      ticker,
-      price: base[ticker as keyof typeof base],
-      changePct: Number((Math.random() * 2 - 1).toFixed(2)),
-      asOf: now,
-    });
+    const toQuote = (ticker: string): Quote => {
+      const jitter = 1 + (Math.random() * 0.06 - 0.03);
+      return {
+        ticker,
+        price: Number((base[ticker as keyof typeof base] * jitter).toFixed(2)),
+        changePct: Number((Math.random() * 2 - 1).toFixed(2)),
+        asOf: now,
+      };
+    };
 
     return {
       asOf: now,

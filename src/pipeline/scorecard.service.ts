@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { Direction } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+
+/** Daily move below this counts as "neutral" for macro NEUTRAL regime calls. */
+const NEUTRAL_BAND = 0.004;
 
 @Injectable()
 export class ScorecardService {
@@ -21,6 +25,12 @@ export class ScorecardService {
     return mean / stdDev;
   }
 
+  regimeToDirection(regime: string): Direction {
+    if (regime === 'RISK_ON') return Direction.LONG;
+    if (regime === 'RISK_OFF') return Direction.SHORT;
+    return Direction.NEUTRAL;
+  }
+
   async scoreOpenRecommendations(prices: Record<string, number>) {
     const unscored = await this.prisma.recommendation.findMany({
       where: {
@@ -31,15 +41,27 @@ export class ScorecardService {
     });
 
     for (const rec of unscored) {
-      const current = prices[rec.ticker];
+      const benchmarkTicker =
+        rec.ticker === 'REGIME' ? 'SPY' : rec.ticker.toUpperCase();
+      const current = prices[benchmarkTicker];
       if (!current || !rec.entryPrice) {
         continue;
       }
 
       const rawReturn = (current - rec.entryPrice) / rec.entryPrice;
-      const weighted =
-        rec.direction === 'SHORT' ? -rawReturn : rawReturn;
-      const isHit = weighted > 0;
+      let weighted: number;
+      let isHit: boolean;
+
+      if (rec.direction === Direction.NEUTRAL) {
+        isHit = Math.abs(rawReturn) <= NEUTRAL_BAND;
+        weighted = isHit ? 0.002 : -Math.abs(rawReturn);
+      } else if (rec.direction === Direction.SHORT) {
+        weighted = -rawReturn;
+        isHit = weighted > 0;
+      } else {
+        weighted = rawReturn;
+        isHit = weighted > 0;
+      }
 
       await this.prisma.recommendation.update({
         where: { id: rec.id },
@@ -68,8 +90,12 @@ export class ScorecardService {
 
       const returns = recs.map((rec) => {
         const conviction = rec.conviction / 100;
-        const directionMultiplier = rec.direction === 'SHORT' ? -1 : 1;
-        return (rec.forwardReturn1d ?? 0) * conviction * directionMultiplier;
+        const raw = rec.forwardReturn1d ?? 0;
+        if (rec.direction === Direction.NEUTRAL) {
+          return (rec.isHit ? 0.002 : -Math.abs(raw)) * conviction;
+        }
+        const directionMultiplier = rec.direction === Direction.SHORT ? -1 : 1;
+        return raw * conviction * directionMultiplier;
       });
 
       const sharpe = this.calculateSharpe(returns);
@@ -83,17 +109,20 @@ export class ScorecardService {
         data: { rollingSharpe: sharpe },
       });
 
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
       await this.prisma.scoreSnapshot.upsert({
         where: {
           agentId_snapshotDate: {
             agentId: agent.id,
-            snapshotDate: new Date(),
+            snapshotDate: today,
           },
         },
         update: { sharpe, hitRate },
         create: {
           agentId: agent.id,
-          snapshotDate: new Date(),
+          snapshotDate: today,
           sharpe,
           hitRate,
         },

@@ -2,7 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   Direction,
   MarketRegime,
+  Prisma,
   RunStatus,
+  TradeAction,
 } from '../../generated/prisma/client';
 import { AgentRunnerService } from '../agents/agent-runner.service';
 import { MarketDataService } from '../market/market-data.service';
@@ -32,42 +34,63 @@ export class EodCycleService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const existing = await this.prisma.dailyRun.findUnique({
+    const todaysRuns = await this.prisma.dailyRun.findMany({
       where: { runDate: today },
+      orderBy: { cycleNumber: 'desc' },
     });
+    const latestToday = todaysRuns[0];
 
-    if (existing?.status === RunStatus.COMPLETED && !options.force) {
-      return { status: 'already_completed', runId: existing.id };
+    if (latestToday?.status === RunStatus.COMPLETED && !options.force) {
+      return { status: 'already_completed', runId: latestToday.id };
     }
 
-    if (options.force && existing) {
+    const snapshot = await this.market.getSnapshot();
+    const prices = Object.fromEntries(
+      [...snapshot.indices, ...snapshot.watchlist, ...(snapshot.vix ? [snapshot.vix] : [])].map(
+        (quote) => [quote.ticker, quote.price],
+      ),
+    );
+
+    await this.scorecard.scoreOpenRecommendations(prices);
+    await this.scorecard.refreshAgentMetrics();
+
+    let run;
+    if (
+      latestToday &&
+      !options.force &&
+      (latestToday.status === RunStatus.RUNNING ||
+        latestToday.status === RunStatus.FAILED)
+    ) {
       await this.prisma.recommendation.deleteMany({
-        where: { runId: existing.id },
+        where: { runId: latestToday.id },
       });
-      await this.prisma.paperTrade.deleteMany({ where: { runId: existing.id } });
-      await this.prisma.dailyRun.delete({ where: { id: existing.id } });
+      await this.prisma.paperTrade.deleteMany({
+        where: { runId: latestToday.id },
+      });
+      run = await this.prisma.dailyRun.update({
+        where: { id: latestToday.id },
+        data: {
+          status: RunStatus.RUNNING,
+          startedAt: new Date(),
+          summary: null,
+          regime: null,
+          skippedActions: Prisma.DbNull,
+          completedAt: null,
+        },
+      });
+    } else {
+      const cycleNumber = latestToday ? latestToday.cycleNumber + 1 : 1;
+      run = await this.prisma.dailyRun.create({
+        data: {
+          runDate: today,
+          cycleNumber,
+          status: RunStatus.RUNNING,
+          startedAt: new Date(),
+        },
+      });
     }
-
-    const run = await this.prisma.dailyRun.upsert({
-      where: { runDate: today },
-      update: { status: RunStatus.RUNNING, startedAt: new Date() },
-      create: {
-        runDate: today,
-        status: RunStatus.RUNNING,
-        startedAt: new Date(),
-      },
-    });
 
     try {
-      const snapshot = await this.market.getSnapshot();
-      const prices = Object.fromEntries(
-        [...snapshot.indices, ...snapshot.watchlist, ...(snapshot.vix ? [snapshot.vix] : [])].map(
-          (quote) => [quote.ticker, quote.price],
-        ),
-      );
-
-      await this.scorecard.scoreOpenRecommendations(prices);
-
       const agentRecords = await this.prisma.agent.findMany({
         include: {
           prompts: { where: { isActive: true }, take: 1 },
@@ -90,7 +113,7 @@ export class EodCycleService {
         promptFor('sector'),
       );
 
-      const portfolio = await this.paper.getPortfolio();
+      const portfolio = await this.paper.getPortfolio(prices);
       const weightedAgents = await this.darwin.updateWeights();
       const cio = await this.agents.runCio(
         macro,
@@ -103,16 +126,19 @@ export class EodCycleService {
 
       const macroAgent = agentRecords.find((a) => a.slug === 'macro');
       const sectorAgent = agentRecords.find((a) => a.slug === 'sector');
+      const cioAgent = agentRecords.find((a) => a.slug === 'cio');
 
-      if (macroAgent) {
+      const spyPrice = prices['SPY'];
+      if (macroAgent && spyPrice) {
         await this.prisma.recommendation.create({
           data: {
             runId: run.id,
             agentId: macroAgent.id,
-            ticker: 'REGIME',
-            direction: Direction.NEUTRAL,
+            ticker: 'SPY',
+            direction: this.scorecard.regimeToDirection(macro.regime),
             conviction: macro.conviction,
-            rationale: macro.rationale,
+            entryPrice: spyPrice,
+            rationale: `[${macro.regime}] ${macro.rationale}`,
           },
         });
       }
@@ -134,11 +160,35 @@ export class EodCycleService {
         }
       }
 
-      const trades = await this.paper.executeActions(
+      const { executed: trades, skipped } = await this.paper.executeActions(
         cio.actions,
         prices,
         run.id,
       );
+
+      if (cioAgent) {
+        for (const trade of trades) {
+          const sourceAction = cio.actions.find(
+            (a) =>
+              a.ticker.toUpperCase() === trade.ticker &&
+              a.action === trade.action,
+          );
+          await this.prisma.recommendation.create({
+            data: {
+              runId: run.id,
+              agentId: cioAgent.id,
+              ticker: trade.ticker,
+              direction:
+                trade.action === TradeAction.SELL
+                  ? Direction.SHORT
+                  : Direction.LONG,
+              conviction: sourceAction?.conviction ?? 50,
+              entryPrice: trade.price,
+              rationale: trade.reason,
+            },
+          });
+        }
+      }
 
       await this.scorecard.refreshAgentMetrics();
 
@@ -149,9 +199,18 @@ export class EodCycleService {
           autoresearchResult = await this.autoresearch.startExperiment();
         }
       }
-      const tickResult = await this.autoresearch.tickAfterDailyRun();
-      if (tickResult) {
-        autoresearchResult = tickResult;
+
+      const priorCompletedToday = await this.prisma.dailyRun.count({
+        where: {
+          runDate: today,
+          status: RunStatus.COMPLETED,
+        },
+      });
+      if (priorCompletedToday === 0) {
+        const tickResult = await this.autoresearch.tickAfterDailyRun();
+        if (tickResult) {
+          autoresearchResult = tickResult;
+        }
       }
 
       const completed = await this.prisma.dailyRun.update({
@@ -161,19 +220,27 @@ export class EodCycleService {
           completedAt: new Date(),
           regime: macro.regime as MarketRegime,
           summary: cio.market_view,
+          skippedActions:
+            skipped.length > 0
+              ? (skipped as unknown as Prisma.InputJsonValue)
+              : undefined,
         },
       });
 
-      this.logger.log(`Daily run completed: ${completed.id}`);
+      this.logger.log(
+        `Daily run completed: ${completed.id} (cycle ${completed.cycleNumber})`,
+      );
 
       return {
         status: 'completed',
         runId: completed.id,
+        cycleNumber: completed.cycleNumber,
         regime: macro.regime,
         macro,
         sector,
         cio,
         trades,
+        skipped,
         autoresearch: autoresearchResult,
       };
     } catch (error) {
