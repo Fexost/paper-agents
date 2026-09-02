@@ -4,6 +4,23 @@ import { AutoresearchStatus } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { ScorecardService } from './scorecard.service';
+import { PaginatedResult, paginate, parseLimit } from '../common/pagination.util';
+
+export interface ActiveExperimentView {
+  id: string;
+  agentId: string;
+  status: AutoresearchStatus;
+  baselineSharpe: number;
+  candidateSharpe: number | null;
+  runningCandidateSharpe: number | null;
+  runningDelta: number | null;
+  evaluationDays: number;
+  daysCompleted: number;
+  changeSummary: string | null;
+  startedAt: Date;
+  completedAt: Date | null;
+  agent: { slug: string; name: string; rollingSharpe: number };
+}
 
 @Injectable()
 export class AutoresearchService {
@@ -20,24 +37,68 @@ export class AutoresearchService {
     return Number(this.config.get<string>('AUTORESEARCH_EVAL_DAYS', '5'));
   }
 
-  async getActiveExperiment() {
-    return this.prisma.autoresearchExperiment.findFirst({
+  async getActiveExperiment(): Promise<ActiveExperimentView | null> {
+    const experiment = await this.prisma.autoresearchExperiment.findFirst({
       where: { status: AutoresearchStatus.EVALUATING },
       include: {
         agent: { select: { slug: true, name: true, rollingSharpe: true } },
       },
       orderBy: { startedAt: 'desc' },
     });
+
+    if (!experiment) {
+      return null;
+    }
+
+    const runningCandidateSharpe = await this.computeSharpeSince(
+      experiment.agentId,
+      experiment.startedAt,
+    );
+
+    return {
+      ...experiment,
+      runningCandidateSharpe,
+      runningDelta: runningCandidateSharpe - experiment.baselineSharpe,
+    };
   }
 
-  async listExperiments(limit = 20) {
-    return this.prisma.autoresearchExperiment.findMany({
-      take: limit,
-      orderBy: { startedAt: 'desc' },
+  async listExperiments(
+    limitRaw?: string,
+    cursor?: string,
+  ): Promise<PaginatedResult<ActiveExperimentView & { agent: { slug: string; name: string } }>> {
+    const limit = parseLimit(limitRaw, 5, 100);
+
+    const rows = await this.prisma.autoresearchExperiment.findMany({
+      take: limit + 1,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       include: {
-        agent: { select: { slug: true, name: true } },
+        agent: { select: { slug: true, name: true, rollingSharpe: true } },
       },
     });
+
+    const enriched = await Promise.all(
+      rows.map(async (experiment) => {
+        let runningCandidateSharpe: number | null = null;
+        let runningDelta: number | null = null;
+
+        if (experiment.status === AutoresearchStatus.EVALUATING) {
+          runningCandidateSharpe = await this.computeSharpeSince(
+            experiment.agentId,
+            experiment.startedAt,
+          );
+          runningDelta = runningCandidateSharpe - experiment.baselineSharpe;
+        }
+
+        return {
+          ...experiment,
+          runningCandidateSharpe,
+          runningDelta,
+        };
+      }),
+    );
+
+    return paginate(enriched, limit);
   }
 
   async startExperiment() {

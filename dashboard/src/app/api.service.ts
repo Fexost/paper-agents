@@ -1,10 +1,13 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import {
   Agent,
   AgentPromptResponse,
   AutoresearchExperiment,
   DailyRun,
+  PaginatedResponse,
+  PaperTrade,
+  PipelineProgress,
   Portfolio,
   SystemStatus,
 } from './models';
@@ -38,12 +41,30 @@ export class ApiService {
     );
   }
 
-  getRuns() {
-    return this.http.get<DailyRun[]>('/api/runs');
+  getRuns(limit = 5, cursor?: string | null) {
+    let params = new HttpParams().set('limit', String(limit));
+    if (cursor) params = params.set('cursor', cursor);
+    return this.http.get<PaginatedResponse<DailyRun>>('/api/runs', { params });
+  }
+
+  getRun(id: string) {
+    return this.http.get<DailyRun>(`/api/runs/${id}`);
   }
 
   getLatestRun() {
     return this.http.get<DailyRun | null>('/api/runs/latest');
+  }
+
+  getTrades(limit = 5, cursor?: string | null) {
+    let params = new HttpParams().set('limit', String(limit));
+    if (cursor) params = params.set('cursor', cursor);
+    return this.http.get<PaginatedResponse<PaperTrade>>('/api/trades', {
+      params,
+    });
+  }
+
+  getPipelineProgress() {
+    return this.http.get<PipelineProgress>('/api/pipeline/progress');
   }
 
   runPipeline(options: { autoresearch?: boolean; force?: boolean } = {}) {
@@ -54,8 +75,13 @@ export class ApiService {
     return this.http.post('/api/autoresearch/start', {});
   }
 
-  getExperiments() {
-    return this.http.get<AutoresearchExperiment[]>('/api/autoresearch/experiments');
+  getExperiments(limit = 5, cursor?: string | null) {
+    let params = new HttpParams().set('limit', String(limit));
+    if (cursor) params = params.set('cursor', cursor);
+    return this.http.get<PaginatedResponse<AutoresearchExperiment>>(
+      '/api/autoresearch/experiments',
+      { params },
+    );
   }
 
   getPrompt(slug: string) {
@@ -63,6 +89,9 @@ export class ApiService {
   }
 
   updatePrompt(slug: string, content: string, note?: string) {
-    return this.http.put<AgentPromptResponse>(`/api/agents/${slug}/prompt`, { content, note });
+    return this.http.put<AgentPromptResponse>(`/api/agents/${slug}/prompt`, {
+      content,
+      note,
+    });
   }
 }

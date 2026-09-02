@@ -164,16 +164,19 @@ model PaperPosition {
 }
 
 model PaperTrade {
-  id        String      @id @default(cuid())
-  runId     String?
-  ticker    String
-  action    TradeAction
-  shares    Float
-  price     Float
-  reason    String      @db.Text
-  createdAt DateTime    @default(now())
-  run       DailyRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
+  id          String      @id @default(cuid())
+  runId       String?
+  ticker      String
+  action      TradeAction
+  shares      Float
+  price       Float
+  costBasis   Float?
+  realizedPnl Float?
+  reason      String      @db.Text
+  createdAt   DateTime    @default(now())
+  run         DailyRun?   @relation(fields: [runId], references: [id], onDelete: SetNull)
 
   @@index([ticker])
   @@index([runId])
+  @@index([createdAt])
 }

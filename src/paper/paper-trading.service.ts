@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MarketDataService } from '../market/market-data.service';
 import { TradeAction } from '../../generated/prisma/client';
 import { CioAction } from '../agents/agent-runner.service';
+import { PaginatedResult, paginate, parseLimit } from '../common/pagination.util';
 
 export interface ExecutedPaperTrade {
   id: string;
@@ -13,6 +14,8 @@ export interface ExecutedPaperTrade {
   shares: number;
   price: number;
   reason: string;
+  costBasis?: number | null;
+  realizedPnl?: number | null;
 }
 
 export interface SkippedPaperAction {
@@ -25,6 +28,21 @@ export interface SkippedPaperAction {
 export interface PaperExecutionResult {
   executed: ExecutedPaperTrade[];
   skipped: SkippedPaperAction[];
+}
+
+export interface EnrichedTrade {
+  id: string;
+  runId: string | null;
+  ticker: string;
+  action: string;
+  shares: number;
+  price: number;
+  reason: string;
+  createdAt: Date;
+  costBasis: number | null;
+  realizedPnl: number | null;
+  unrealizedPnl: number | null;
+  pnlLabel: 'realized' | 'unrealized' | null;
 }
 
 @Injectable()
@@ -75,13 +93,9 @@ export class PaperTradingService {
   }
 
   async getPortfolio(prices?: Record<string, number>) {
-    const [account, positions, recentTrades, priceMap] = await Promise.all([
+    const [account, positions, priceMap] = await Promise.all([
       this.ensureAccount(),
       this.prisma.paperPosition.findMany({ orderBy: { ticker: 'asc' } }),
-      this.prisma.paperTrade.findMany({
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
       this.resolvePrices(prices),
     ]);
 
@@ -111,7 +125,6 @@ export class PaperTradingService {
     return {
       account,
       positions: enrichedPositions,
-      recentTrades,
       totals: {
         cash: account.cashBalance,
         costBasis,
@@ -120,6 +133,32 @@ export class PaperTradingService {
         unrealizedPnl: positionValue - costBasis,
       },
     };
+  }
+
+  async listTrades(
+    limitRaw?: string,
+    cursor?: string,
+  ): Promise<PaginatedResult<EnrichedTrade>> {
+    const limit = parseLimit(limitRaw, 5, 500);
+
+    const rows = await this.prisma.paperTrade.findMany({
+      take: limit + 1,
+      ...(cursor
+        ? { skip: 1, cursor: { id: cursor } }
+        : {}),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    const items = rows.map((trade) => ({
+      ...trade,
+      unrealizedPnl: null,
+      pnlLabel:
+        trade.action === TradeAction.SELL && trade.realizedPnl != null
+          ? ('realized' as const)
+          : null,
+    }));
+
+    return paginate(items, limit);
   }
 
   async executeActions(
@@ -156,6 +195,8 @@ export class PaperTradingService {
       }
 
       let shares = action.shares;
+      let costBasis: number | null = null;
+      let realizedPnl: number | null = null;
 
       if (action.action === 'BUY') {
         const existing = await this.prisma.paperPosition.findUnique({
@@ -189,6 +230,7 @@ export class PaperTradingService {
           continue;
         }
 
+        costBasis = price;
         const notional = shares * price;
 
         if (existing) {
@@ -240,6 +282,8 @@ export class PaperTradingService {
           continue;
         }
 
+        costBasis = existing.avgCost;
+        realizedPnl = (price - existing.avgCost) * shares;
         const proceeds = shares * price;
 
         if (existing.shares === shares) {
@@ -265,6 +309,8 @@ export class PaperTradingService {
           action: action.action as TradeAction,
           shares,
           price,
+          costBasis,
+          realizedPnl,
           reason: action.rationale,
         },
       });
@@ -274,7 +320,6 @@ export class PaperTradingService {
     return { executed, skipped };
   }
 
-  /** Paper-only: cash + positions + trade log. Learning state (agents, prompts, scorecard, runs) is preserved. */
   async resetPortfolio() {
     const startingCash = Number(
       this.config.get<string>('PAPER_STARTING_CASH', '100000'),

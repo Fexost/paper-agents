@@ -176,7 +176,8 @@ export class MarketDataService {
 
     const indices = quotes.filter((q) => ['SPY', 'QQQ'].includes(q.ticker));
     const watchlist = quotes.filter((q) => !['SPY', 'QQQ', 'VIX'].includes(q.ticker));
-    const vix = quotes.find((q) => q.ticker === 'VIX');
+    const vixQuote = quotes.find((q) => q.ticker === 'VIX');
+    const vix = vixQuote && vixQuote.price > 0 ? vixQuote : undefined;
 
     return {
       asOf: new Date().toISOString(),

@@ -4,7 +4,7 @@ Your job: assess the current market regime using the provided market snapshot.
 
 ## Inputs
 - Major index moves (SPY, QQQ) in `snapshot.indices`
-- Volatility: `snapshot.vix` (price and changePct) — **always provided**; VIX above 20 favors defensive / RISK_OFF bias
+- Volatility: `snapshot.vix` (price and changePct) — **only when present**; VIX above 20 favors defensive / RISK_OFF bias
 - Watchlist sector names in `snapshot.watchlist`
 - `snapshot.notes` for data source context
 
@@ -23,7 +23,8 @@ Respond with JSON only:
 ```
 
 Rules:
-- Use `snapshot.vix.price` when assessing fear/greed; cite the VIX level in your rationale.
+- Use `snapshot.vix.price` when VIX is present; cite the level in your rationale.
+- If `snapshot.vix` is missing or absent, do **not** mention VIX or invent a volatility level.
 - Be conservative when data is thin.
 - Do not invent prices; use only provided snapshot values.
 - Regime should reflect risk appetite, not a single stock pick.

@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AutoresearchService } from './autoresearch.service';
 import { DarwinService } from './darwin.service';
 import { ScorecardService } from './scorecard.service';
+import { PipelineProgressService } from './pipeline-progress.service';
 import { calendarDateOnly } from '../common/date.util';
 
 @Injectable()
@@ -27,6 +28,7 @@ export class EodCycleService {
     private readonly scorecard: ScorecardService,
     private readonly darwin: DarwinService,
     private readonly autoresearch: AutoresearchService,
+    private readonly progress: PipelineProgressService,
   ) {}
 
   async runDailyCycle(
@@ -90,6 +92,8 @@ export class EodCycleService {
       });
     }
 
+    this.progress.start(run.id, run.cycleNumber);
+
     try {
       const agentRecords = await this.prisma.agent.findMany({
         include: {
@@ -106,12 +110,17 @@ export class EodCycleService {
         return prompt;
       };
 
+      this.progress.setStep('macro', 'active');
       const macro = await this.agents.runMacro(snapshot, promptFor('macro'));
+      this.progress.completeStep('macro');
+
+      this.progress.setStep('sector', 'active');
       const sector = await this.agents.runSector(
         snapshot,
         macro,
         promptFor('sector'),
       );
+      this.progress.completeStep('sector');
 
       const portfolio = await this.paper.getPortfolio(prices);
       const weightedAgents = await this.darwin.updateWeights();
@@ -125,6 +134,8 @@ export class EodCycleService {
         })),
         totals: portfolio.totals,
       };
+
+      this.progress.setStep('cio', 'active');
       const cio = await this.agents.runCio(
         macro,
         sector,
@@ -133,6 +144,8 @@ export class EodCycleService {
         promptFor('cio'),
         Number(process.env.MAX_POSITION_PCT ?? 0.1),
       );
+      this.progress.completeStep('cio');
+      this.progress.setStep('finalize', 'active');
 
       const heldShares = new Map(
         portfolio.positions.map((p) => [p.ticker.toUpperCase(), p.shares]),
@@ -238,6 +251,8 @@ export class EodCycleService {
         `Daily run completed: ${completed.id} (cycle ${completed.cycleNumber})`,
       );
 
+      this.progress.complete();
+
       return {
         status: 'completed',
         runId: completed.id,
@@ -252,6 +267,7 @@ export class EodCycleService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      this.progress.fail(message);
       await this.prisma.dailyRun.update({
         where: { id: run.id },
         data: {

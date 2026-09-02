@@ -13,8 +13,8 @@
       <span class="badge" [class.online]="apiOnline" [class.offline]="!apiOnline">
         {{ apiOnline ? 'API online' : 'API offline' }}
       </span>
-      <span class="badge" [class.live]="status?.market?.usingLiveData" [class.warn]="status?.market?.finnhubConfigured && !status?.market?.usingLiveData">
-        Market: {{ marketStatusLabel() }}
+      <span class="badge market-pill" [class.live]="status?.market?.usingLiveData" [class.warn]="status?.market?.finnhubConfigured && !status?.market?.usingLiveData">
+        {{ marketStatusLabel() }}
       </span>
       <span class="badge" [class.ready]="status?.llmReady" [class.warn]="status && !status.llmReady">
         LLM: {{ status?.llmPrimary || 'unknown' }}
@@ -37,89 +37,100 @@
   </section>
 
   <section class="panel system-status" *ngIf="status">
-    <div class="status-header">
-      <h2>System Status</h2>
-      <span class="muted">Server time: {{ status.serverTime | date:'medium' }}</span>
-    </div>
+    <button type="button" class="collapse-toggle" (click)="systemDetailsOpen = !systemDetailsOpen">
+      {{ systemDetailsOpen ? 'Hide system details' : 'Show system details' }}
+    </button>
 
-    <div class="status-cards">
-      <article class="status-card" [class.ok]="apiOnline" [class.bad]="!apiOnline">
-        <span class="label">API</span>
-        <strong>{{ apiOnline ? status.api.service : 'offline' }}</strong>
-        <span class="detail" *ngIf="apiOnline">:{{ status.api.port }} · proxy → /api</span>
-      </article>
-
-      <article class="status-card" [class.ok]="status.database === 'ok'" [class.bad]="status.database === 'error'">
-        <span class="label">Database</span>
-        <strong>{{ status.database === 'ok' ? 'connected' : 'error' }}</strong>
-        <span class="detail">Postgres via Prisma</span>
-      </article>
-
-      <article class="status-card" [class.ok]="status.market.usingLiveData" [class.warn]="status.market.finnhubConfigured && !status.market.usingLiveData">
-        <span class="label">Market data</span>
-        <strong>{{ status.market.usingLiveData ? 'finnhub' : 'mock' }}</strong>
-        <span class="detail" *ngIf="status.market.finnhubConfigured && !status.market.usingLiveData">
-          Key set but using mock
-        </span>
-        <span class="detail" *ngIf="!status.market.finnhubConfigured">
-          Add FINNHUB_API_KEY for live quotes
-        </span>
-        <span class="detail" *ngIf="status.market.finnhubError">
-          {{ status.market.finnhubError }}
-        </span>
-      </article>
-
-      <article class="status-card" [class.ok]="status.llmReady" [class.warn]="!status.llmReady">
-        <span class="label">LLM</span>
-        <strong>{{ status.llmPrimary }}</strong>
-        <span class="detail">{{ readyLlmCount() }} provider(s) ready</span>
-      </article>
-    </div>
-
-    <div class="status-grid">
-      <div>
-        <span class="label">LLM fallbacks</span>
-        <strong>{{ status.llmFallbacks }}</strong>
+    <div *ngIf="systemDetailsOpen">
+      <div class="status-header">
+        <h2>System Status</h2>
+        <span class="muted">Server time: {{ status.serverTime | date:'medium' }}</span>
       </div>
-      <div>
-        <span class="label">Autoresearch eval window</span>
-        <strong>{{ status.autoresearchEvalDays }} days</strong>
-      </div>
-      <div>
-        <span class="label">Active experiment</span>
-        <strong>{{ status.activeExperiment ? status.activeExperiment.agent?.slug : 'None' }}</strong>
-      </div>
-      <div>
-        <span class="label">Experiments kept / reverted</span>
-        <strong *ngIf="experiments.length">{{ keptCount() }} / {{ revertedCount() }}</strong>
-        <strong *ngIf="!experiments.length" class="muted">none yet</strong>
-      </div>
-    </div>
 
-    <div class="provider-list" *ngIf="status.llmProviders.length">
-      <h3>LLM providers</h3>
-      <div class="provider-row" *ngFor="let p of status.llmProviders">
-        <div class="provider-main">
-          <span class="badge" [class.ready]="p.ready" [class.warn]="!p.ready">{{ p.role }}</span>
-          <strong>{{ p.name }}</strong>
-          <span class="muted" *ngIf="p.model">{{ p.model }}</span>
+      <div class="status-cards">
+        <article class="status-card" [class.ok]="apiOnline" [class.bad]="!apiOnline">
+          <span class="label">API</span>
+          <strong>{{ apiOnline ? status.api.service : 'offline' }}</strong>
+          <span class="detail" *ngIf="apiOnline">:{{ status.api.port }} · proxy → /api</span>
+        </article>
+
+        <article class="status-card" [class.ok]="status.database === 'ok'" [class.bad]="status.database === 'error'">
+          <span class="label">Database</span>
+          <strong>{{ status.database === 'ok' ? 'connected' : 'error' }}</strong>
+          <span class="detail">Postgres via Prisma</span>
+        </article>
+
+        <article class="status-card" [class.ok]="status.market.usingLiveData" [class.warn]="status.market.finnhubConfigured && !status.market.usingLiveData">
+          <span class="label">Market data</span>
+          <strong>{{ status.market.usingLiveData ? 'finnhub' : 'mock' }}</strong>
+          <span class="detail" *ngIf="status.market.finnhubConfigured && !status.market.usingLiveData">
+            Key set but using mock
+          </span>
+          <span class="detail" *ngIf="!status.market.finnhubConfigured">
+            Add FINNHUB_API_KEY for live quotes
+          </span>
+          <span class="detail" *ngIf="status.market.finnhubError">
+            {{ status.market.finnhubError }}
+          </span>
+        </article>
+
+        <article class="status-card" [class.ok]="status.llmReady" [class.warn]="!status.llmReady">
+          <span class="label">LLM</span>
+          <strong>{{ status.llmPrimary }}</strong>
+          <span class="detail">{{ readyLlmCount() }} provider(s) ready</span>
+        </article>
+      </div>
+
+      <div class="status-grid">
+        <div>
+          <span class="label">LLM fallbacks</span>
+          <strong>{{ status.llmFallbacks }}</strong>
         </div>
-        <div class="provider-meta">
-          <span class="muted" *ngIf="p.baseUrl">{{ p.baseUrl }}</span>
-          <span class="provider-note" *ngIf="p.note">{{ p.note }}</span>
+        <div>
+          <span class="label">Autoresearch eval window</span>
+          <strong>{{ status.autoresearchEvalDays }} days</strong>
+        </div>
+        <div>
+          <span class="label">Active experiment</span>
+          <strong>{{ status.activeExperiment ? status.activeExperiment.agent?.slug : 'None' }}</strong>
+        </div>
+        <div>
+          <span class="label">Experiments kept / reverted</span>
+          <strong *ngIf="experimentsPage.items.length">{{ keptCount() }} / {{ revertedCount() }}</strong>
+          <strong *ngIf="!experimentsPage.items.length" class="muted">none yet</strong>
+        </div>
+      </div>
+
+      <div class="provider-list" *ngIf="status.llmProviders.length">
+        <h3>LLM providers</h3>
+        <div class="provider-row" *ngFor="let p of status.llmProviders">
+          <div class="provider-main">
+            <span class="badge" [class.ready]="p.ready" [class.warn]="!p.ready">{{ p.role }}</span>
+            <strong>{{ p.name }}</strong>
+            <span class="muted" *ngIf="p.model">{{ p.model }}</span>
+          </div>
+          <div class="provider-meta">
+            <span class="muted" *ngIf="p.baseUrl">{{ p.baseUrl }}</span>
+            <span class="provider-note" *ngIf="p.note">{{ p.note }}</span>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
   <section class="toolbar panel">
-    <div class="toolbar-actions">
-      <button class="primary" (click)="runCycle()" [disabled]="running || !apiOnline">
-        {{ running ? 'Running...' : 'Run Paper Cycle' }}
-      </button>
-      <button (click)="startAutoresearch()" [disabled]="startingAutoresearch || !apiOnline || !!status?.activeExperiment">
-        {{ startingAutoresearch ? 'Starting...' : 'Start Autoresearch' }}
-      </button>
+    <div class="toolbar-row">
+      <div class="toolbar-actions">
+        <button class="primary" (click)="runCycle()" [disabled]="running || !apiOnline">
+          {{ running ? 'Running...' : 'Run Paper Cycle' }}
+        </button>
+        <button (click)="startAutoresearch()" [disabled]="startingAutoresearch || !apiOnline || !!status?.activeExperiment">
+          {{ startingAutoresearch ? 'Starting...' : 'Start Autoresearch' }}
+        </button>
+      </div>
+      <div class="toolbar-stepper">
+        <app-agent-pipeline-stepper *ngIf="running" [progress]="pipelineProgress" />
+      </div>
     </div>
     <div class="toolbar-options">
       <label class="checkbox">
@@ -137,22 +148,22 @@
   <p class="error" *ngIf="error">{{ error }}</p>
   <p class="success" *ngIf="success">{{ success }}</p>
 
-  <section class="cards" *ngIf="portfolio">
+  <section class="cards compact" *ngIf="portfolio">
     <article class="card">
       <h3>Equity</h3>
-      <p class="value">{{ portfolio.totals.equity | currency }}</p>
-      <p class="delta" [class.good]="pnl() >= 0" [class.bad]="pnl() < 0">
+      <p class="value num">{{ portfolio.totals.equity | currency }}</p>
+      <p class="delta num" [class.good]="pnl() >= 0" [class.bad]="pnl() < 0">
         {{ pnl() >= 0 ? '+' : '' }}{{ pnl() | currency }} ({{ pnlPct() | percent:'1.2-2' }})
       </p>
     </article>
     <article class="card">
       <h3>Cash</h3>
-      <p class="value">{{ portfolio.totals.cash | currency }}</p>
-      <p class="muted">Positions: {{ portfolio.totals.positionValue | currency }}</p>
+      <p class="value num">{{ portfolio.totals.cash | currency }}</p>
+      <p class="muted num">Positions: {{ portfolio.totals.positionValue | currency }}</p>
     </article>
     <article class="card">
       <h3>Positions</h3>
-      <p class="value">{{ portfolio.positions.length }}</p>
+      <p class="value num">{{ portfolio.positions.length }}</p>
     </article>
     <article class="card">
       <h3>Last Run</h3>
@@ -176,51 +187,24 @@
       <div class="progress-bar">
         <div class="progress-fill" [style.width.%]="experimentProgress(exp)"></div>
       </div>
+      <p class="muted" *ngIf="exp.runningCandidateSharpe != null">
+        Candidate so far:
+        <span class="num">{{ exp.runningCandidateSharpe | number:'1.3-3' }}</span>
+        <span [class.good]="(exp.runningDelta ?? 0) > 0" [class.bad]="(exp.runningDelta ?? 0) < 0">
+          ({{ (exp.runningDelta ?? 0) >= 0 ? '+' : '' }}{{ exp.runningDelta | number:'1.3-3' }})
+        </span>
+      </p>
       <p class="muted">
-        Baseline Sharpe: {{ exp.baselineSharpe | number:'1.3-3' }} —
-        after {{ exp.evaluationDays }} runs, keep if Sharpe improves else revert (ATLAS pattern)
+        Baseline Sharpe: <span class="num">{{ exp.baselineSharpe | number:'1.3-3' }}</span> —
+        after {{ exp.evaluationDays }} runs, keep if Sharpe improves else revert
       </p>
     </div>
   </section>
 
-  <section class="panel">
-    <h2>Autoresearch History</h2>
-    <table *ngIf="experiments.length; else noExperiments">
-      <thead>
-        <tr>
-          <th>Agent</th>
-          <th>Status</th>
-          <th>Progress</th>
-          <th>Baseline Sharpe</th>
-          <th>Candidate Sharpe</th>
-          <th>Delta</th>
-          <th>Change</th>
-          <th>Started</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let e of experiments">
-          <td>{{ e.agent?.slug }}</td>
-          <td><span class="badge" [ngClass]="statusClass(e.status)">{{ e.status }}</span></td>
-          <td>{{ e.daysCompleted }}/{{ e.evaluationDays }}</td>
-          <td>{{ e.baselineSharpe | number:'1.3-3' }}</td>
-          <td>{{ e.candidateSharpe != null ? (e.candidateSharpe | number:'1.3-3') : '—' }}</td>
-          <td [class.good]="(sharpeDelta(e) ?? 0) > 0" [class.bad]="(sharpeDelta(e) ?? 0) < 0">
-            {{ sharpeDelta(e) != null ? (sharpeDelta(e)! | number:'1.3-3') : '—' }}
-          </td>
-          <td class="rationale">{{ e.changeSummary || '—' }}</td>
-          <td>{{ e.startedAt | date:'short' }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <ng-template #noExperiments>
-      <p class="muted">No autoresearch experiments yet — click Start Autoresearch</p>
-    </ng-template>
-  </section>
-
-  <div class="grid">
-    <section class="panel">
+  <div class="top-grid">
+    <section class="panel agents-panel" #agentsPanel>
       <h2>Agents</h2>
+      <div class="panel-body">
       <table>
         <thead>
           <tr>
@@ -237,8 +221,8 @@
           <tr *ngFor="let a of agents">
             <td>{{ a.name }}</td>
             <td>{{ a.layer }}</td>
-            <td>{{ a.darwinWeight | number:'1.2-2' }}</td>
-            <td>{{ a.rollingSharpe | number:'1.3-3' }}</td>
+            <td class="num">{{ a.darwinWeight | number:'1.2-2' }}</td>
+            <td class="num">{{ a.rollingSharpe | number:'1.3-3' }}</td>
             <td>
               {{ a.hitRate != null ? (a.hitRate | percent:'1.0-0') : (latestSnapshot(a) ? (latestSnapshot(a)!.hitRate | percent:'1.0-0') : '—') }}
             </td>
@@ -254,10 +238,12 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </section>
 
-    <section class="panel">
+    <section class="panel portfolio-panel" #portfolioPanel>
       <h2>Portfolio</h2>
+      <div class="panel-body">
       <table *ngIf="portfolio?.positions?.length; else noPos">
         <thead>
           <tr><th>Ticker</th><th>Shares</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>P&amp;L</th></tr>
@@ -265,68 +251,178 @@
         <tbody>
           <tr *ngFor="let p of portfolio!.positions">
             <td>{{ p.ticker }}</td>
-            <td>{{ p.shares }}</td>
-            <td>{{ p.avgCost | currency }}</td>
-            <td>{{ (p.currentPrice ?? p.avgCost) | currency }}</td>
-            <td>{{ (p.marketValue ?? p.shares * p.avgCost) | currency }}</td>
-            <td [class.good]="(p.unrealizedPnl ?? 0) >= 0" [class.bad]="(p.unrealizedPnl ?? 0) < 0">
+            <td class="num">{{ p.shares }}</td>
+            <td class="num">{{ p.avgCost | currency }}</td>
+            <td class="num">{{ (p.currentPrice ?? p.avgCost) | currency }}</td>
+            <td class="num">{{ (p.marketValue ?? p.shares * p.avgCost) | currency }}</td>
+            <td class="num" [class.good]="(p.unrealizedPnl ?? 0) >= 0" [class.bad]="(p.unrealizedPnl ?? 0) < 0">
               {{ (p.unrealizedPnl ?? 0) >= 0 ? '+' : '' }}{{ (p.unrealizedPnl ?? 0) | currency }}
             </td>
           </tr>
         </tbody>
       </table>
       <ng-template #noPos><p class="muted">No open positions</p></ng-template>
-
-      <h3>Recent Trades</h3>
-      <ul class="trades" *ngIf="portfolio?.recentTrades?.length; else noTrades">
-        <li *ngFor="let t of portfolio!.recentTrades">
-          <strong>{{ t.action }}</strong> {{ t.shares }} {{ t.ticker }} at {{ t.price | currency }}
-          <span class="muted">{{ t.createdAt | date:'short' }}</span>
-        </li>
-      </ul>
-      <ng-template #noTrades><p class="muted">No trades yet</p></ng-template>
+      </div>
     </section>
   </div>
 
-  <section class="panel">
-    <h2>Run History</h2>
-    <table *ngIf="runs.length; else noRuns">
-      <thead>
-        <tr><th>Date</th><th>Cycle</th><th>Status</th><th>Regime</th><th>Recs</th><th>Trades</th><th>Summary</th></tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let r of runs">
-          <td>{{ r.runDate | date:'mediumDate' }}</td>
-          <td>{{ r.cycleNumber ?? 1 }}</td>
-          <td><span class="badge" [ngClass]="statusClass(r.status)">{{ r.status }}</span></td>
-          <td>{{ r.regime || '—' }}</td>
-          <td>{{ r._count?.recommendations ?? 0 }}</td>
-          <td>{{ r._count?.trades ?? 0 }}</td>
-          <td class="rationale">{{ r.summary || '—' }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <ng-template #noRuns><p class="muted">No runs yet</p></ng-template>
-  </section>
+  <div class="history-zone">
+    <section class="panel history-panel">
+      <h2>Recent Trades</h2>
+      <app-scroll-load-box
+        [hasMore]="tradesPage.hasMore"
+        [loadingMore]="tradesPage.loadingMore"
+        (loadMore)="loadMoreTrades()"
+      >
+        <table>
+          <thead>
+            <tr><th>Side</th><th>Trade</th><th>Price</th><th>P&amp;L</th><th>Time</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let t of tradesPage.items">
+              <td>
+                <span class="badge" [class.buy]="t.action === 'BUY'" [class.sell]="t.action === 'SELL'">
+                  {{ t.action }}
+                </span>
+              </td>
+              <td>{{ t.shares }} {{ t.ticker }}</td>
+              <td class="num">{{ t.price | currency }}</td>
+              <td class="num" [class.good]="(tradePnl(t) ?? 0) > 0" [class.bad]="(tradePnl(t) ?? 0) < 0">
+                <ng-container *ngIf="tradePnl(t) != null; else noPnl">
+                  {{ tradePnl(t)! >= 0 ? '+' : '' }}{{ tradePnl(t) | currency }}
+                </ng-container>
+                <ng-template #noPnl>—</ng-template>
+              </td>
+              <td>{{ t.createdAt | date:'short' }}</td>
+            </tr>
+            <tr *ngIf="!tradesPage.items.length">
+              <td colspan="5" class="muted empty-row">No trades yet</td>
+            </tr>
+          </tbody>
+        </table>
+      </app-scroll-load-box>
+    </section>
 
-  <section class="panel">
+    <section class="panel history-panel">
+      <h2>Autoresearch History</h2>
+      <app-scroll-load-box
+        *ngIf="experimentsPage.items.length; else noExperiments"
+        [hasMore]="experimentsPage.hasMore"
+        [loadingMore]="experimentsPage.loadingMore"
+        (loadMore)="loadMoreExperiments()"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Baseline</th>
+              <th>Candidate</th>
+              <th>Delta</th>
+              <th>Change</th>
+              <th>Started</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let e of experimentsPage.items">
+              <td>{{ e.agent?.slug }}</td>
+              <td><span class="badge" [ngClass]="statusClass(e.status)">{{ e.status }}</span></td>
+              <td>{{ e.daysCompleted }}/{{ e.evaluationDays }}</td>
+              <td class="num">{{ e.baselineSharpe | number:'1.3-3' }}</td>
+              <td class="num">{{ candidateSharpe(e) != null ? (candidateSharpe(e)! | number:'1.3-3') : '—' }}</td>
+              <td class="num" [class.good]="(sharpeDelta(e) ?? 0) > 0" [class.bad]="(sharpeDelta(e) ?? 0) < 0">
+                {{ sharpeDelta(e) != null ? (sharpeDelta(e)! | number:'1.3-3') : '—' }}
+              </td>
+              <td class="rationale">
+                <button
+                  type="button"
+                  class="link-btn"
+                  *ngIf="e.changeSummary"
+                  (click)="toggleExperimentChange(e.id, $event)"
+                >
+                  {{ isExperimentChangeExpanded(e.id) ? '▼' : '▶' }}
+                </button>
+                <span *ngIf="!isExperimentChangeExpanded(e.id)">
+                  {{ (e.changeSummary || '—') | slice:0:80 }}{{ (e.changeSummary?.length ?? 0) > 80 ? '…' : '' }}
+                </span>
+                <span *ngIf="isExperimentChangeExpanded(e.id)">{{ e.changeSummary || '—' }}</span>
+              </td>
+              <td>{{ e.startedAt | date:'short' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </app-scroll-load-box>
+      <ng-template #noExperiments>
+        <p class="muted">No autoresearch experiments yet — click Start Autoresearch</p>
+      </ng-template>
+    </section>
+
+    <section class="panel history-panel">
+      <h2>Run History</h2>
+      <app-scroll-load-box
+        *ngIf="runsPage.items.length; else noRuns"
+        [hasMore]="runsPage.hasMore"
+        [loadingMore]="runsPage.loadingMore"
+        (loadMore)="loadMoreRuns()"
+      >
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Cycle</th><th>Status</th><th>Regime</th><th>Recs</th><th>Trades</th><th>Summary</th></tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let r of runsPage.items"
+              class="clickable"
+              (click)="selectRun(r)"
+            >
+              <td>
+                {{ r.runDate | date:'mediumDate' }}
+                <span class="muted" *ngIf="r.startedAt"> · {{ r.startedAt | date:'shortTime' }}</span>
+              </td>
+              <td class="num">{{ r.cycleNumber ?? 1 }}</td>
+              <td><span class="badge" [ngClass]="statusClass(r.status)">{{ r.status }}</span></td>
+              <td>{{ r.regime || '—' }}</td>
+              <td class="num">{{ r._count?.recommendations ?? 0 }}</td>
+              <td class="num">{{ r._count?.trades ?? 0 }}</td>
+              <td class="rationale">
+                <button
+                  type="button"
+                  class="link-btn"
+                  *ngIf="r.summary"
+                  (click)="toggleRunSummary(r.id, $event)"
+                >
+                  {{ isRunExpanded(r.id) ? '▼' : '▶' }}
+                </button>
+                <span *ngIf="!isRunExpanded(r.id)">{{ (r.summary || '—') | slice:0:80 }}{{ (r.summary?.length ?? 0) > 80 ? '…' : '' }}</span>
+                <span *ngIf="isRunExpanded(r.id)">{{ r.summary || '—' }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </app-scroll-load-box>
+      <ng-template #noRuns><p class="muted">No runs yet</p></ng-template>
+    </section>
+  </div>
+
+  <section class="panel" #runDetail>
     <h2>Latest Run Detail</h2>
-    <p class="muted" *ngIf="!latestRun">No runs yet — click Run Paper Cycle</p>
-    <p *ngIf="latestRun?.summary">{{ latestRun!.summary }}</p>
+    <p class="muted" *ngIf="!detailRun()">No runs yet — click Run Paper Cycle</p>
+    <p *ngIf="detailRun()?.summary">{{ detailRun()!.summary }}</p>
 
-    <div class="split" *ngIf="latestRun">
+    <div class="split" *ngIf="detailRun() as run">
       <div>
         <h3>Recommendations</h3>
-        <table *ngIf="latestRun.recommendations?.length; else noRecs">
+        <table *ngIf="run.recommendations?.length; else noRecs">
           <thead>
             <tr><th>Agent</th><th>Ticker</th><th>Dir</th><th>Conv</th><th>Rationale</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let r of latestRun.recommendations">
+            <tr *ngFor="let r of run.recommendations">
               <td>{{ r.agent.slug }}</td>
               <td>{{ r.ticker }}</td>
               <td>{{ r.direction }}</td>
-              <td>{{ r.conviction }}</td>
+              <td class="num">{{ r.conviction }}</td>
               <td class="rationale">{{ r.rationale }}</td>
             </tr>
           </tbody>
@@ -335,32 +431,42 @@
       </div>
       <div>
         <h3>Trades</h3>
-        <table *ngIf="latestRun.trades?.length; else noRunTrades">
+        <table *ngIf="run.trades?.length; else noRunTrades">
           <thead>
-            <tr><th>Action</th><th>Ticker</th><th>Shares</th><th>Price</th><th>Reason</th></tr>
+            <tr><th>Action</th><th>Ticker</th><th>Shares</th><th>Price</th><th>P&amp;L</th><th>Reason</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let t of latestRun.trades">
-              <td>{{ t.action }}</td>
+            <tr *ngFor="let t of run.trades">
+              <td>
+                <span class="badge" [class.buy]="t.action === 'BUY'" [class.sell]="t.action === 'SELL'">
+                  {{ t.action }}
+                </span>
+              </td>
               <td>{{ t.ticker }}</td>
-              <td>{{ t.shares }}</td>
-              <td>{{ t.price | currency }}</td>
+              <td class="num">{{ t.shares }}</td>
+              <td class="num">{{ t.price | currency }}</td>
+              <td class="num" [class.good]="(t.realizedPnl ?? 0) > 0" [class.bad]="(t.realizedPnl ?? 0) < 0">
+                <ng-container *ngIf="t.realizedPnl != null; else dashPnl">
+                  {{ t.realizedPnl >= 0 ? '+' : '' }}{{ t.realizedPnl | currency }}
+                </ng-container>
+                <ng-template #dashPnl>—</ng-template>
+              </td>
               <td class="rationale">{{ t.reason }}</td>
             </tr>
           </tbody>
         </table>
         <ng-template #noRunTrades><p class="muted">No trades executed</p></ng-template>
-        <div *ngIf="latestRun.skippedActions?.length" class="skipped-block">
+        <div *ngIf="run.skippedActions?.length" class="skipped-block">
           <h4>Skipped / blocked actions</h4>
           <table>
             <thead>
               <tr><th>Action</th><th>Ticker</th><th>Requested</th><th>Reason</th></tr>
             </thead>
             <tbody>
-              <tr *ngFor="let s of latestRun.skippedActions">
+              <tr *ngFor="let s of run.skippedActions">
                 <td>{{ s.action }}</td>
                 <td>{{ s.ticker }}</td>
-                <td>{{ s.requestedShares ?? '—' }}</td>
+                <td class="num">{{ s.requestedShares ?? '—' }}</td>
                 <td class="rationale">{{ s.reason }}</td>
               </tr>
             </tbody>

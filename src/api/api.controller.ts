@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EodCycleService } from '../pipeline/eod-cycle.service';
@@ -15,6 +16,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MarketDataService } from '../market/market-data.service';
 import { LlmService } from '../llm/llm.service';
 import { ScorecardService } from '../pipeline/scorecard.service';
+import { PipelineProgressService } from '../pipeline/pipeline-progress.service';
+import { paginate, parseLimit } from '../common/pagination.util';
 
 @Controller('api')
 export class ApiController {
@@ -27,6 +30,7 @@ export class ApiController {
     private readonly config: ConfigService,
     private readonly llm: LlmService,
     private readonly scorecard: ScorecardService,
+    private readonly progress: PipelineProgressService,
   ) {}
 
   @Get('health')
@@ -41,7 +45,6 @@ export class ApiController {
   @Get('status')
   async status() {
     const activeExperiment = await this.autoresearch.getActiveExperiment();
-    // Warm cache once per request; portfolio in the same refresh shares this snapshot.
     await this.market.getSnapshot();
 
     let database: 'ok' | 'error' = 'error';
@@ -106,14 +109,21 @@ export class ApiController {
   }
 
   @Get('runs')
-  async listRuns() {
-    return this.prisma.dailyRun.findMany({
-      orderBy: [{ runDate: 'desc' }, { cycleNumber: 'desc' }],
-      take: 50,
+  async listRuns(
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    const limit = parseLimit(limitRaw, 5, 200);
+    const rows = await this.prisma.dailyRun.findMany({
+      take: limit + 1,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: [{ runDate: 'desc' }, { cycleNumber: 'desc' }, { id: 'desc' }],
       include: {
         _count: { select: { recommendations: true, trades: true } },
       },
     });
+
+    return paginate(rows, limit);
   }
 
   @Get('runs/latest')
@@ -127,6 +137,34 @@ export class ApiController {
         trades: true,
       },
     });
+  }
+
+  @Get('runs/:id')
+  async getRun(@Param('id') id: string) {
+    const run = await this.prisma.dailyRun.findUnique({
+      where: { id },
+      include: {
+        recommendations: {
+          include: { agent: { select: { slug: true, name: true } } },
+        },
+        trades: true,
+        _count: { select: { recommendations: true, trades: true } },
+      },
+    });
+
+    if (!run) {
+      throw new NotFoundException(`Run not found: ${id}`);
+    }
+
+    return run;
+  }
+
+  @Get('trades')
+  listTrades(
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.paper.listTrades(limitRaw, cursor);
   }
 
   @Get('portfolio')
@@ -145,8 +183,11 @@ export class ApiController {
   }
 
   @Get('autoresearch/experiments')
-  listExperiments() {
-    return this.autoresearch.listExperiments();
+  listExperiments(
+    @Query('limit') limitRaw?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.autoresearch.listExperiments(limitRaw, cursor);
   }
 
   @Get('autoresearch/active')
@@ -157,6 +198,11 @@ export class ApiController {
   @Post('autoresearch/start')
   startAutoresearch() {
     return this.autoresearch.startExperiment();
+  }
+
+  @Get('pipeline/progress')
+  getPipelineProgress() {
+    return this.progress.getProgress();
   }
 
   @Post('pipeline/run')

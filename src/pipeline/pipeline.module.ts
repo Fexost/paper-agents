@@ -8,6 +8,7 @@ import { DailyCycleJob } from './daily-cycle.job';
 import { DarwinService } from './darwin.service';
 import { EodCycleService } from './eod-cycle.service';
 import { ScorecardService } from './scorecard.service';
+import { PipelineProgressService } from './pipeline-progress.service';
 
 @Module({
   imports: [AgentsModule, MarketModule, PaperModule, LlmModule],
@@ -17,7 +18,13 @@ import { ScorecardService } from './scorecard.service';
     DarwinService,
     AutoresearchService,
     DailyCycleJob,
+    PipelineProgressService,
   ],
-  exports: [EodCycleService, AutoresearchService, ScorecardService],
+  exports: [
+    EodCycleService,
+    AutoresearchService,
+    ScorecardService,
+    PipelineProgressService,
+  ],
 })
 export class PipelineModule {}

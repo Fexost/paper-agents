@@ -22,15 +22,6 @@ export interface Portfolio {
     unrealizedPnl?: number;
     unrealizedPnlPct?: number;
   }>;
-  recentTrades: Array<{
-    id: string;
-    ticker: string;
-    action: string;
-    shares: number;
-    price: number;
-    reason: string;
-    createdAt: string;
-  }>;
   totals: {
     cash: number;
     costBasis?: number;
@@ -50,6 +41,7 @@ export interface SkippedAction {
 export interface DailyRun {
   id: string;
   runDate: string;
+  startedAt?: string;
   cycleNumber?: number;
   status: string;
   regime: string | null;
@@ -62,8 +54,36 @@ export interface DailyRun {
     rationale: string;
     agent: { slug: string; name: string };
   }>;
-  trades?: Array<{ ticker: string; action: string; shares: number; price: number; reason: string }>;
+  trades?: Array<{
+    ticker: string;
+    action: string;
+    shares: number;
+    price: number;
+    reason: string;
+    realizedPnl?: number | null;
+  }>;
   _count?: { recommendations: number; trades: number };
+}
+
+export interface PaperTrade {
+  id: string;
+  runId: string | null;
+  ticker: string;
+  action: string;
+  shares: number;
+  price: number;
+  reason: string;
+  createdAt: string;
+  costBasis: number | null;
+  realizedPnl: number | null;
+  unrealizedPnl: number | null;
+  pnlLabel: 'realized' | 'unrealized' | null;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export interface AgentPromptResponse {
@@ -83,6 +103,8 @@ export interface AutoresearchExperiment {
   status: 'EVALUATING' | 'KEPT' | 'REVERTED';
   baselineSharpe: number;
   candidateSharpe: number | null;
+  runningCandidateSharpe?: number | null;
+  runningDelta?: number | null;
   evaluationDays: number;
   daysCompleted: number;
   changeSummary: string | null;
@@ -129,4 +151,24 @@ export interface SystemStatus {
   llmReady: boolean;
   autoresearchEvalDays: number;
   activeExperiment: AutoresearchExperiment | null;
+}
+
+export type AgentStep = 'macro' | 'sector' | 'cio';
+export type StepStatus = 'pending' | 'active' | 'done' | 'error';
+
+export interface PipelineProgress {
+  active: boolean;
+  runId?: string;
+  cycleNumber?: number;
+  currentStep?: AgentStep | 'finalize';
+  steps: Record<AgentStep, StepStatus>;
+  error?: string;
+  startedAt?: string;
+}
+
+export interface HistoryPage<T> {
+  items: T[];
+  cursor: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
 }

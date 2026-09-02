@@ -1,21 +1,27 @@
 import { CommonModule, CurrencyPipe, DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, ElementRef, AfterViewInit, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   Subject,
   Subscription,
   catchError,
   forkJoin,
+  interval,
   of,
   switchMap,
   takeUntil,
   timer,
 } from 'rxjs';
 import { ApiService } from '../../api.service';
+import { AgentPipelineStepperComponent } from '../../components/agent-pipeline-stepper/agent-pipeline-stepper.component';
+import { ScrollLoadBoxComponent } from '../../components/scroll-load-box/scroll-load-box.component';
 import {
   Agent,
   AutoresearchExperiment,
   DailyRun,
+  HistoryPage,
+  PaperTrade,
+  PipelineProgress,
   Portfolio,
   SystemStatus,
 } from '../../models';
@@ -23,28 +29,48 @@ import {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, CurrencyPipe, DatePipe, DecimalPipe, PercentPipe],
+  imports: [
+    CommonModule,
+    FormsModule,
+    CurrencyPipe,
+    DatePipe,
+    DecimalPipe,
+    PercentPipe,
+    ScrollLoadBoxComponent,
+    AgentPipelineStepperComponent,
+  ],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css',
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('runDetail') runDetailRef?: ElementRef<HTMLElement>;
+  @ViewChild('portfolioPanel') portfolioPanelRef?: ElementRef<HTMLElement>;
+  @ViewChild('agentsPanel') agentsPanelRef?: ElementRef<HTMLElement>;
+
   agents: Agent[] = [];
   portfolio: Portfolio | null = null;
   latestRun: DailyRun | null = null;
-  runs: DailyRun[] = [];
-  experiments: AutoresearchExperiment[] = [];
+  selectedRun: DailyRun | null = null;
   status: SystemStatus | null = null;
+
+  runsPage: HistoryPage<DailyRun> = this.emptyPage();
+  tradesPage: HistoryPage<PaperTrade> = this.emptyPage();
+  experimentsPage: HistoryPage<AutoresearchExperiment> = this.emptyPage();
 
   apiOnline = false;
   apiHealth: { ok: boolean; service: string; port: number } | null = null;
   statusError = '';
   loading = true;
   running = false;
+  pipelineProgress: PipelineProgress | null = null;
   startingAutoresearch = false;
   savingPrompt = false;
   resettingPortfolio = false;
   runWithAutoresearch = false;
   forceRerun = false;
+  systemDetailsOpen = false;
+  expandedRuns = new Set<string>();
+  expandedExperiments = new Set<string>();
   error = '';
   success = '';
   lastRefresh = new Date();
@@ -57,15 +83,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private pollSub?: Subscription;
   private refreshSub?: Subscription;
   private actionSub?: Subscription;
+  private progressSub?: Subscription;
   private successTimer?: ReturnType<typeof setTimeout>;
   private readonly pollOnlineMs = 15_000;
   private readonly pollOfflineMs = 30_000;
   private refreshInFlight = false;
+  private panelHeightObserver?: ResizeObserver;
 
   constructor(private readonly api: ApiService) {}
 
   ngOnInit() {
     this.refresh();
+  }
+
+  ngAfterViewInit() {
+    this.setupPanelHeightSync();
   }
 
   ngOnDestroy() {
@@ -74,7 +106,28 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.pollSub?.unsubscribe();
     this.refreshSub?.unsubscribe();
     this.actionSub?.unsubscribe();
+    this.progressSub?.unsubscribe();
+    this.panelHeightObserver?.disconnect();
     if (this.successTimer) clearTimeout(this.successTimer);
+  }
+
+  private setupPanelHeightSync() {
+    const portfolioEl = this.portfolioPanelRef?.nativeElement;
+    const agentsEl = this.agentsPanelRef?.nativeElement;
+    if (!portfolioEl || !agentsEl) return;
+
+    const sync = () => {
+      agentsEl.style.height = `${portfolioEl.offsetHeight}px`;
+    };
+
+    sync();
+    this.panelHeightObserver?.disconnect();
+    this.panelHeightObserver = new ResizeObserver(sync);
+    this.panelHeightObserver.observe(portfolioEl);
+  }
+
+  private emptyPage<T>(): HistoryPage<T> {
+    return { items: [], cursor: null, hasMore: false, loadingMore: false };
   }
 
   private schedulePoll() {
@@ -106,7 +159,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return this.status?.market?.snapshotTtlMs ?? this.pollOnlineMs;
   }
 
-  /** Single health request when API is known offline — avoids proxy spam. */
   private probeApi(showLoading = false) {
     this.refreshSub?.unsubscribe();
     if (showLoading) this.loading = true;
@@ -162,6 +214,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             latestRun: this.api.getLatestRun().pipe(catchError(() => of(null))),
             experiments: this.api.getExperiments().pipe(catchError(() => of(null))),
             runs: this.api.getRuns().pipe(catchError(() => of(null))),
+            trades: this.api.getTrades().pipe(catchError(() => of(null))),
             prompt: this.api
               .getPrompt(this.selectedAgent)
               .pipe(catchError(() => of(null))),
@@ -195,8 +248,19 @@ export class DashboardComponent implements OnInit, OnDestroy {
           if (data.portfolio) this.portfolio = data.portfolio;
           if (data.agents) this.agents = data.agents;
           this.latestRun = data.latestRun ?? null;
-          this.experiments = data.experiments ?? [];
-          if (data.runs) this.runs = data.runs;
+          if (!this.selectedRun) {
+            this.selectedRun = this.latestRun;
+          }
+
+          if (data.experiments) {
+            this.mergeHistoryPage(this.experimentsPage, data.experiments, showLoading);
+          }
+          if (data.runs) {
+            this.mergeHistoryPage(this.runsPage, data.runs, showLoading);
+          }
+          if (data.trades) {
+            this.mergeHistoryPage(this.tradesPage, data.trades, showLoading);
+          }
 
           if (data.prompt) {
             this.promptContent = data.prompt.prompt.content;
@@ -206,6 +270,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.loading = false;
           this.lastRefresh = new Date();
           this.schedulePoll();
+          setTimeout(() => this.setupPanelHeightSync());
         },
         error: () => {
           this.refreshInFlight = false;
@@ -214,6 +279,79 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.schedulePoll();
         },
       });
+  }
+
+  private mergeHistoryPage<T extends { id: string }>(
+    page: HistoryPage<T>,
+    response: { items: T[]; nextCursor: string | null; hasMore: boolean },
+    reset: boolean,
+  ) {
+    if (reset || page.items.length === 0) {
+      page.items = response.items;
+      page.cursor = response.nextCursor;
+      page.hasMore = response.hasMore;
+      return;
+    }
+
+    const newestId = response.items[0]?.id;
+    if (newestId && page.items[0]?.id !== newestId) {
+      const existingIds = new Set(page.items.map((i) => i.id));
+      const prepend = response.items.filter((i) => !existingIds.has(i.id));
+      if (prepend.length) {
+        page.items = [...prepend, ...page.items];
+      }
+    }
+  }
+
+  loadMoreRuns() {
+    if (!this.runsPage.hasMore || this.runsPage.loadingMore) return;
+    this.runsPage.loadingMore = true;
+    this.api.getRuns(5, this.runsPage.cursor).subscribe({
+      next: (res) => {
+        this.runsPage.items = [...this.runsPage.items, ...res.items];
+        this.runsPage.cursor = res.nextCursor;
+        this.runsPage.hasMore = res.hasMore;
+        this.runsPage.loadingMore = false;
+      },
+      error: () => {
+        this.runsPage.loadingMore = false;
+      },
+    });
+  }
+
+  loadMoreTrades() {
+    if (!this.tradesPage.hasMore || this.tradesPage.loadingMore) return;
+    this.tradesPage.loadingMore = true;
+    this.api.getTrades(5, this.tradesPage.cursor).subscribe({
+      next: (res) => {
+        this.tradesPage.items = [...this.tradesPage.items, ...res.items];
+        this.tradesPage.cursor = res.nextCursor;
+        this.tradesPage.hasMore = res.hasMore;
+        this.tradesPage.loadingMore = false;
+      },
+      error: () => {
+        this.tradesPage.loadingMore = false;
+      },
+    });
+  }
+
+  loadMoreExperiments() {
+    if (!this.experimentsPage.hasMore || this.experimentsPage.loadingMore) return;
+    this.experimentsPage.loadingMore = true;
+    this.api.getExperiments(5, this.experimentsPage.cursor).subscribe({
+      next: (res) => {
+        this.experimentsPage.items = [
+          ...this.experimentsPage.items,
+          ...res.items,
+        ];
+        this.experimentsPage.cursor = res.nextCursor;
+        this.experimentsPage.hasMore = res.hasMore;
+        this.experimentsPage.loadingMore = false;
+      },
+      error: () => {
+        this.experimentsPage.loadingMore = false;
+      },
+    });
   }
 
   confirmResetPortfolio() {
@@ -255,9 +393,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   runCycle() {
     this.running = true;
+    this.pipelineProgress = null;
     this.error = '';
     this.clearSuccess();
     this.actionSub?.unsubscribe();
+    this.startProgressPolling();
 
     this.actionSub = this.api
       .runPipeline({
@@ -268,6 +408,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (res: unknown) => {
           this.running = false;
+          this.stopProgressPolling();
           const result = res as { status?: string };
           if (result.status === 'already_completed') {
             this.error = "Today's run already completed — enable Force re-run";
@@ -278,9 +419,32 @@ export class DashboardComponent implements OnInit, OnDestroy {
         },
         error: (e) => {
           this.running = false;
+          this.stopProgressPolling();
           this.error = e.error?.message ?? e.message ?? 'Pipeline failed';
         },
       });
+  }
+
+  private startProgressPolling() {
+    this.progressSub?.unsubscribe();
+    this.progressSub = interval(400)
+      .pipe(
+        switchMap(() =>
+          this.api.getPipelineProgress().pipe(catchError(() => of(null))),
+        ),
+        takeUntil(this.destroy$),
+      )
+      .subscribe((progress) => {
+        if (progress) {
+          this.pipelineProgress = progress;
+        }
+      });
+  }
+
+  private stopProgressPolling() {
+    this.progressSub?.unsubscribe();
+    this.progressSub = undefined;
+    this.pipelineProgress = null;
   }
 
   startAutoresearch() {
@@ -310,14 +474,74 @@ export class DashboardComponent implements OnInit, OnDestroy {
       });
   }
 
+  selectRun(run: DailyRun) {
+    this.api.getRun(run.id).subscribe({
+      next: (detail) => {
+        this.selectedRun = detail;
+        setTimeout(() => {
+          this.runDetailRef?.nativeElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          });
+        }, 50);
+      },
+      error: () => {
+        this.selectedRun = run;
+      },
+    });
+  }
+
+  toggleRunSummary(runId: string, event: Event) {
+    event.stopPropagation();
+    if (this.expandedRuns.has(runId)) {
+      this.expandedRuns.delete(runId);
+    } else {
+      this.expandedRuns.add(runId);
+    }
+  }
+
+  isRunExpanded(runId: string): boolean {
+    return this.expandedRuns.has(runId);
+  }
+
+  toggleExperimentChange(experimentId: string, event: Event) {
+    event.stopPropagation();
+    if (this.expandedExperiments.has(experimentId)) {
+      this.expandedExperiments.delete(experimentId);
+    } else {
+      this.expandedExperiments.add(experimentId);
+    }
+  }
+
+  isExperimentChangeExpanded(experimentId: string): boolean {
+    return this.expandedExperiments.has(experimentId);
+  }
+
   experimentProgress(exp: AutoresearchExperiment): number {
     if (!exp.evaluationDays) return 0;
     return Math.min(100, (exp.daysCompleted / exp.evaluationDays) * 100);
   }
 
+  candidateSharpe(exp: AutoresearchExperiment): number | null {
+    if (exp.status === 'EVALUATING' && exp.runningCandidateSharpe != null) {
+      return exp.runningCandidateSharpe;
+    }
+    return exp.candidateSharpe;
+  }
+
   sharpeDelta(exp: AutoresearchExperiment): number | null {
+    if (exp.status === 'EVALUATING' && exp.runningDelta != null) {
+      return exp.runningDelta;
+    }
     if (exp.candidateSharpe == null) return null;
     return exp.candidateSharpe - exp.baselineSharpe;
+  }
+
+  tradePnl(trade: PaperTrade): number | null {
+    if (trade.action !== 'SELL' || trade.realizedPnl == null) {
+      return null;
+    }
+    return trade.realizedPnl;
   }
 
   statusClass(status: string): string {
@@ -330,8 +554,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   marketStatusLabel(): string {
     if (!this.status?.market) return 'unknown';
-    if (this.status.market.usingLiveData) return 'finnhub (live)';
-    if (this.status.market.finnhubConfigured) return 'mock (finnhub failed)';
+    if (this.status.market.usingLiveData) return 'live';
+    if (this.status.market.finnhubConfigured) return 'mock';
     return 'mock';
   }
 
@@ -388,11 +612,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   keptCount(): number {
-    return this.experiments.filter((e) => e.status === 'KEPT').length;
+    return this.experimentsPage.items.filter((e) => e.status === 'KEPT').length;
   }
 
   revertedCount(): number {
-    return this.experiments.filter((e) => e.status === 'REVERTED').length;
+    return this.experimentsPage.items.filter((e) => e.status === 'REVERTED').length;
+  }
+
+  detailRun(): DailyRun | null {
+    return this.selectedRun ?? this.latestRun;
   }
 
   private showSuccess(message: string) {
