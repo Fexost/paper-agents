@@ -60,12 +60,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private successTimer?: ReturnType<typeof setTimeout>;
   private readonly pollOnlineMs = 15_000;
   private readonly pollOfflineMs = 30_000;
+  private refreshInFlight = false;
 
   constructor(private readonly api: ApiService) {}
 
   ngOnInit() {
     this.refresh();
-    this.schedulePoll();
   }
 
   ngOnDestroy() {
@@ -79,10 +79,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   private schedulePoll() {
     this.pollSub?.unsubscribe();
-    const delay = this.apiOnline ? this.pollOnlineMs : this.pollOfflineMs;
+    const delay = this.pollDelayMs();
     this.pollSub = timer(delay)
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
+        if (this.refreshInFlight) {
+          this.schedulePoll();
+          return;
+        }
         if (this.apiOnline) {
           this.refresh(false);
         } else {
@@ -90,6 +94,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
         this.schedulePoll();
       });
+  }
+
+  private pollDelayMs(): number {
+    if (!this.apiOnline) {
+      return this.pollOfflineMs;
+    }
+    if (this.status?.market?.finnhubConfigured && !this.status.market.usingLiveData) {
+      return this.status.market.mockTtlMs ?? 30_000;
+    }
+    return this.status?.market?.snapshotTtlMs ?? this.pollOnlineMs;
   }
 
   /** Single health request when API is known offline — avoids proxy spam. */
@@ -126,6 +140,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   refresh(showLoading = true) {
+    if (this.refreshInFlight) {
+      return;
+    }
+    this.refreshInFlight = true;
     if (showLoading) this.loading = true;
     this.refreshSub?.unsubscribe();
 
@@ -155,10 +173,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       )
       .subscribe({
         next: (data) => {
+          this.refreshInFlight = false;
           if (data.offline) {
             this.setOffline();
             this.loading = false;
             this.lastRefresh = new Date();
+            this.schedulePoll();
             return;
           }
 
@@ -185,10 +205,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
           this.loading = false;
           this.lastRefresh = new Date();
+          this.schedulePoll();
         },
         error: () => {
+          this.refreshInFlight = false;
           this.setOffline();
           this.loading = false;
+          this.schedulePoll();
         },
       });
   }

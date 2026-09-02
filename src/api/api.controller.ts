@@ -39,6 +39,7 @@ export class ApiController {
   @Get('status')
   async status() {
     const activeExperiment = await this.autoresearch.getActiveExperiment();
+    // Warm cache once per request; portfolio in the same refresh shares this snapshot.
     await this.market.getSnapshot();
 
     let database: 'ok' | 'error' = 'error';

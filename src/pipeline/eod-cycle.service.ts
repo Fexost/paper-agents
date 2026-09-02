@@ -44,7 +44,7 @@ export class EodCycleService {
       return { status: 'already_completed', runId: latestToday.id };
     }
 
-    const snapshot = await this.market.getSnapshot();
+    const snapshot = await this.market.getSnapshot({ force: true });
     const prices = Object.fromEntries(
       [...snapshot.indices, ...snapshot.watchlist, ...(snapshot.vix ? [snapshot.vix] : [])].map(
         (quote) => [quote.ticker, quote.price],

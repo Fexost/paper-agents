@@ -103,6 +103,10 @@ export interface MarketStatus {
   finnhubConfigured: boolean;
   finnhubError: string | null;
   usingLiveData: boolean;
+  snapshotTtlMs?: number;
+  mockTtlMs?: number;
+  cacheTtlMs?: number;
+  finnhubBackoffMs?: number;
 }
 
 export interface ApiHealth {
